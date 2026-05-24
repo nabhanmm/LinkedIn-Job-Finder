@@ -117,16 +117,26 @@ def do_signup(email: str, password: str, username: str):
             "password": password,
             "options": {"data": {"username": username}},
         })
+        if res.user is None:
+            return None, "Sign up failed. The email may already be registered."
         return res.user, None
     except Exception as e:
-        return None, str(e)
+        err = str(e)
+        if "already registered" in err.lower() or "already exists" in err.lower():
+            return None, "This email is already registered. Please Sign In instead."
+        return None, err
 
 def do_signin(email: str, password: str):
     try:
         res = supabase.auth.sign_in_with_password({"email": email, "password": password})
         return res, None
     except Exception as e:
-        return None, str(e)
+        err = str(e)
+        if "invalid" in err.lower() or "credentials" in err.lower():
+            return None, "Invalid email or password."
+        if "confirm" in err.lower():
+            return None, "Please verify your email first — check your inbox."
+        return None, err
 
 def do_signout():
     try:
