@@ -313,12 +313,26 @@ def show_main_app():
 
         job_title = st.text_input("🏷️ Job Title", value="Talent Acquisition Manager")
 
-        LOCATION_OPTIONS = [
+        COMMON_LOCATIONS = [
             "India", "Kochi", "Bangalore", "Mumbai", "Delhi", "Hyderabad",
             "Chennai", "Pune", "Bangkok", "Singapore", "Dubai", "Abu Dhabi",
             "United States", "United Kingdom", "Canada", "Australia", "Remote",
         ]
-        locations  = st.multiselect("📍 Locations",  LOCATION_OPTIONS, default=["India", "Kochi"])
+        st.markdown("<div style='font-size:13px; color:#e2e8f0; margin-bottom:4px;'>📍 Locations</div>", unsafe_allow_html=True)
+        quick_locs = st.multiselect(
+            "Quick-select common locations",
+            options=COMMON_LOCATIONS,
+            default=["India", "Kochi"],
+            label_visibility="collapsed",
+        )
+        custom_locs_raw = st.text_input(
+            "➕ Add more locations (comma-separated)",
+            placeholder="e.g. Riyadh, Kuala Lumpur, Frankfurt",
+        )
+        custom_locs = [l.strip() for l in custom_locs_raw.split(",") if l.strip()]
+        locations = list(dict.fromkeys(quick_locs + custom_locs))  # deduplicated, order preserved
+        if locations:
+            st.caption(f"Searching: {', '.join(locations)}")
         work_modes = st.multiselect("💼 Work Mode",  ["remote", "hybrid", "onsite"], default=["remote", "hybrid"])
         exp_levels = st.multiselect("📊 Experience Level",
             ["internship", "entry", "associate", "mid-senior", "director", "executive"],
@@ -737,7 +751,21 @@ def show_main_app():
         buf2 = io.BytesIO()
         with pd.ExcelWriter(buf2, engine="openpyxl") as w:
             download_df.to_excel(w, index=False, sheet_name="Job Repository")
-            lj.apply_styles_and_dropdown(w.sheets["Job Repository"], len(download_df))
+            ws = w.sheets["Job Repository"]
+            from openpyxl.styles import Font, PatternFill, Alignment
+            from openpyxl.worksheet.datavalidation import DataValidation
+            header_fill = PatternFill("solid", fgColor="1F3864")
+            for cell in ws[1]:
+                cell.font      = Font(bold=True, color="FFFFFF", size=10)
+                cell.fill      = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            ws.freeze_panes = "A2"
+            for col_cells in ws.columns:
+                max_len = max((len(str(c.value or "")) for c in col_cells), default=10)
+                ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 40)
+            dv = DataValidation(type="list", formula1='"New,Relevant,Applied,Irrelevant"', allow_blank=True)
+            ws.add_data_validation(dv)
+            dv.sqref = f"A2:A{len(download_df) + 1}"
         buf2.seek(0)
         dl2.download_button(
             "⬇️ Download Excel",
