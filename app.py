@@ -635,26 +635,49 @@ def show_main_app():
 
         st.markdown("---")
 
-        # Filters
-        rf1, rf2, rf3, rf4 = st.columns(4)
+        # Clear filters button + session state reset
+        if "repo_filters_cleared" not in st.session_state:
+            st.session_state.repo_filters_cleared = False
+
         all_statuses  = ["New", "Relevant", "Applied", "Irrelevant"]
         all_r_matches = sorted(repo_df["match"].dropna().unique().tolist())
         all_r_locs    = sorted(repo_df["location"].dropna().unique().tolist())
         all_r_comps   = sorted(repo_df["company"].dropna().unique().tolist())
 
-        sel_st = rf1.multiselect("Status",   all_statuses,  default=all_statuses,  key="rp_st")
-        sel_rm = rf2.multiselect("Match",    all_r_matches, default=all_r_matches, key="rp_m")
-        sel_rl = rf3.multiselect("Location", all_r_locs,    default=all_r_locs,    key="rp_l")
-        sel_rc = rf4.multiselect("Company",  all_r_comps,   default=all_r_comps,   key="rp_c")
+        filter_row, btn_col = st.columns([5, 1])
+        with btn_col:
+            st.markdown("<div style='margin-top:4px'></div>", unsafe_allow_html=True)
+            if st.button("🔄 Clear Filters", use_container_width=True, help="Reset all filters to show the full repository"):
+                for key in ["rp_st", "rp_m", "rp_l", "rp_c"]:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+
+        with filter_row:
+            rf1, rf2, rf3, rf4 = st.columns(4)
+            sel_st = rf1.multiselect("Status",   all_statuses,  default=all_statuses,  key="rp_st")
+            sel_rm = rf2.multiselect("Match",    all_r_matches, default=all_r_matches, key="rp_m")
+            sel_rl = rf3.multiselect("Location", all_r_locs,    default=all_r_locs,    key="rp_l")
+            sel_rc = rf4.multiselect("Company",  all_r_comps,   default=all_r_comps,   key="rp_c")
+
+        # If any filter is completely empty, treat it as "show all" for that dimension
+        active_st = sel_st if sel_st else all_statuses
+        active_rm = sel_rm if sel_rm else all_r_matches
+        active_rl = sel_rl if sel_rl else all_r_locs
+        active_rc = sel_rc if sel_rc else all_r_comps
 
         rmask = (
-            repo_df["status"].isin(sel_st) &
-            repo_df["match"].isin(sel_rm) &
-            repo_df["location"].isin(sel_rl) &
-            repo_df["company"].isin(sel_rc)
+            repo_df["status"].isin(active_st) &
+            repo_df["match"].isin(active_rm) &
+            repo_df["location"].isin(active_rl) &
+            repo_df["company"].isin(active_rc)
         )
         filtered_repo = repo_df[rmask].copy().reset_index(drop=True)
-        st.caption(f"Showing **{len(filtered_repo)}** of **{len(repo_df)}** jobs  ·  Click any **Status ✏️** cell to update")
+
+        filter_active = (sel_st != all_statuses or sel_rm != all_r_matches
+                         or sel_rl != all_r_locs or sel_rc != all_r_comps)
+        filter_note = " · 🔽 Filters active" if filter_active else ""
+        st.caption(f"Showing **{len(filtered_repo)}** of **{len(repo_df)}** jobs  ·  Click any **Status ✏️** cell to update{filter_note}")
 
         DISPLAY_COLS = [
             "status", "job_title", "company", "company_size", "company_type",
