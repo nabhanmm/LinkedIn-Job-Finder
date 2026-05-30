@@ -635,9 +635,10 @@ def show_main_app():
 
         st.markdown("---")
 
-        # Clear filters button + session state reset
-        if "repo_filters_cleared" not in st.session_state:
-            st.session_state.repo_filters_cleared = False
+        # Reset counter — incrementing this forces all multiselects to re-render fresh
+        if "repo_filter_gen" not in st.session_state:
+            st.session_state.repo_filter_gen = 0
+        gen = st.session_state.repo_filter_gen
 
         all_statuses  = ["New", "Relevant", "Applied", "Irrelevant"]
         all_r_matches = sorted(repo_df["match"].dropna().unique().tolist())
@@ -648,17 +649,15 @@ def show_main_app():
         with btn_col:
             st.markdown("<div style='margin-top:4px'></div>", unsafe_allow_html=True)
             if st.button("🔄 Clear Filters", use_container_width=True, help="Reset all filters to show the full repository"):
-                for key in ["rp_st", "rp_m", "rp_l", "rp_c"]:
-                    if key in st.session_state:
-                        del st.session_state[key]
+                st.session_state.repo_filter_gen += 1
                 st.rerun()
 
         with filter_row:
             rf1, rf2, rf3, rf4 = st.columns(4)
-            sel_st = rf1.multiselect("Status",   all_statuses,  default=all_statuses,  key="rp_st")
-            sel_rm = rf2.multiselect("Match",    all_r_matches, default=all_r_matches, key="rp_m")
-            sel_rl = rf3.multiselect("Location", all_r_locs,    default=all_r_locs,    key="rp_l")
-            sel_rc = rf4.multiselect("Company",  all_r_comps,   default=all_r_comps,   key="rp_c")
+            sel_st = rf1.multiselect("Status",   all_statuses,  default=all_statuses,  key=f"rp_st_{gen}")
+            sel_rm = rf2.multiselect("Match",    all_r_matches, default=all_r_matches, key=f"rp_m_{gen}")
+            sel_rl = rf3.multiselect("Location", all_r_locs,    default=all_r_locs,    key=f"rp_l_{gen}")
+            sel_rc = rf4.multiselect("Company",  all_r_comps,   default=all_r_comps,   key=f"rp_c_{gen}")
 
         # If any filter is completely empty, treat it as "show all" for that dimension
         active_st = sel_st if sel_st else all_statuses
