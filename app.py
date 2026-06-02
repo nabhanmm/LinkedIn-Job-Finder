@@ -671,7 +671,8 @@ def show_main_app():
             m1.metric("Total Found",    len(df))
             m2.metric("New to Repo",    new_c or 0)
             m3.metric("Duplicates",     dup_c or 0)
-            m4.metric("Score ≥ 80",     len(df[pd.to_numeric(df["Score"], errors="coerce") >= 80]))
+            score_col = "Score" if "Score" in df.columns else ("Match" if "Match" in df.columns else None)
+            m4.metric("Score ≥ 80", len(df[pd.to_numeric(df[score_col], errors="coerce") >= 80]) if score_col else 0)
             m5.metric("Easy Apply",     len(df[df["Easy Apply"] == "Yes"]))
             m6.metric("Still Open",     len(df[df["Still Accepting?"] == "Yes"]))
 
@@ -710,7 +711,8 @@ def show_main_app():
                     "Posted Date":                st.column_config.TextColumn("Posted",      width="small"),
                     "Easy Apply":                 st.column_config.TextColumn("Easy Apply",  width="small"),
                     "Recruiter Profile":          st.column_config.LinkColumn("Recruiter",   display_text="👤", width="small"),
-                    "Score":                      st.column_config.NumberColumn("Score",     width="small", format="%d"),
+                    **({"Score": st.column_config.NumberColumn("Score", width="small", format="%d")} if "Score" in fdf.columns else {}),
+                    **({"Match": st.column_config.TextColumn("Match", width="small")} if "Match" in fdf.columns else {}),
                     "Primary Keywords Match":     st.column_config.TextColumn("Primary KW",  width="small"),
                     "Secondary Keywords Match":   st.column_config.TextColumn("Secondary KW",width="small"),
                     "Work Mode":                  st.column_config.TextColumn("Mode",        width="small"),

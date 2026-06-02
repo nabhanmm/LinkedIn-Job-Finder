@@ -20,20 +20,36 @@ from email import encoders
 # CONFIGURATION — the only section you ever need to edit
 # ═══════════════════════════════════════════════════════════════════
 CONFIG = {
-    "job_title": "Talent Acquisition Manager",
-    "location": ["India", "Kochi", "Bangkok"],
-    "work_mode": ["remote", "hybrid"],
-    "experience_level": ["mid-senior", "director", "executive"],
+    # Job title — add multiple designations separated by commas inside double quotes
+    # Example: "Talent Acquisition Manager", "Head of Recruiting", "TA Lead"
+    # LinkedIn will search each as a broad keyword match.
+    "job_title": ["Talent Acquisition Manager", "Head of Recruiting", "TA Lead", "Recruitment Manager", "HR Manager"],
+
+    # ── Primary Must-have Keywords (AND logic) ─────────────────────
+    # ALL words listed here must appear somewhere in the job title or description.
+    # Use a comma-separated list. Leave as [] to disable this filter.
+    # Example: ["analytics", "ATS"] means the job must mention BOTH words.
+    "primary_must_have": ["recruitment", "hiring"],
+
+    # ── Secondary Must-have Keywords (OR logic) ────────────────────
+    # At least ONE word from this list must appear in the job title or description.
+    # Works as an AND condition alongside primary_must_have.
+    # Leave as [] to disable this filter.
+    # Example: ["SaaS", "analytics", "IT services"] means the job must mention
+    # at least one of these — but not necessarily all of them.
+    "secondary_must_have": ["analytics"],
+    "location": ["India", "Kochi", "Bangkok", "Thailand", "US"],
+    "work_mode": ["remote"],
+    "experience_level": ["any"],
     "job_type": "full-time",
-    "posted_within_days": 7,
-    "min_years_experience": 8,
+    "posted_within_days": 30,
+    "min_years_experience": 0,
     "preferred_keywords": [
         "analytics", "data analytics", "IT services", "SaaS",
         "consulting", "product", "technology", "AI", "machine learning"
     ],
     "exclude_keywords": [
-        "BPO", "staffing", "RPO", "junior", "associate recruiter",
-        "fresher", "entry level", "intern", "relocation required"
+        "BPO", "staffing", "RPO", "junior"
     ],
 
     # ── Company filter (optional) ──────────────────────────────────
@@ -45,13 +61,13 @@ CONFIG = {
     # ── Closed jobs filter ─────────────────────────────────────────
     # True  = exclude jobs that are no longer accepting applications (default)
     # False = include closed jobs (they will be flagged in the Excel)
-    "exclude_closed_jobs": True,
+    "exclude_closed_jobs": False,
 
     "skills": [
         "ATS", "sourcing", "recruitment", "talent acquisition",
         "hiring", "Excel", "Power Automate", "Power BI"
     ],
-    "max_results":     30,
+    "max_results":     100,
     "output_folder":   ".",
     "output_filename": "linkedin_ta_jobs_ALL.xlsx",
     "schedule_time":   "10:00",
@@ -88,7 +104,8 @@ COL_ORDER = [
     "Applied?",
     "Job Title", "Company", "Company Size", "Company Type",
     "Level", "Location", "Posted Date", "Easy Apply", "Recruiter Profile",
-    "Match", "Work Mode", "Still Accepting?", "Date Searched", "Exp. Required", "LinkedIn URL"
+    "Score", "Primary Keywords Match", "Secondary Keywords Match",
+    "Work Mode", "Still Accepting?", "Date Searched", "Exp. Required", "LinkedIn URL"
 ]
 
 
@@ -329,29 +346,35 @@ def parse_card(card, exclude, preferred, exp_level="", work_mode_label=""):
 
         level    = LEVEL_LABELS.get(exp_level, exp_level.title() if exp_level else "")
         combined = (title + " " + company + " " + loc).lower()
+
         for ex in exclude:
             if ex in combined:
                 return None
-        score = sum(1 for p in preferred if p in combined)
-        match = "Strong" if score >= 3 else ("Good" if score >= 1 else "Neutral")
+
+        # NOTE: primary_must_have and secondary_must_have are applied
+        # during the enrichment step where the full description is available.
+        # Checking them here (card only has title+company+location) would
+        # filter out almost everything incorrectly.
 
         return {
-            "Applied?":          "",
-            "Job Title":         title,
-            "Company":           company,
-            "Company Size":      "",
-            "Company Type":      "",
-            "Level":             level,
-            "Location":          loc,
-            "Posted Date":       posted,
-            "Easy Apply":        easy,
-            "Recruiter Profile": "",
-            "Match":             match,
-            "Work Mode":         work_mode_label,
-            "Still Accepting?":  "",   # filled by enrich pass
-            "Date Searched":     datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "Exp. Required":     "",
-            "LinkedIn URL":      url,
+            "Applied?":                   "",
+            "Job Title":                  title,
+            "Company":                    company,
+            "Company Size":               "",
+            "Company Type":               "",
+            "Level":                      level,
+            "Location":                   loc,
+            "Posted Date":                posted,
+            "Easy Apply":                 easy,
+            "Recruiter Profile":          "",
+            "Score":                      "",   # filled by enrich pass
+            "Primary Keywords Match":     "",   # filled by enrich pass
+            "Secondary Keywords Match":   "",   # filled by enrich pass
+            "Work Mode":                  work_mode_label,
+            "Still Accepting?":           "",   # filled by enrich pass
+            "Date Searched":              datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "Exp. Required":              "",
+            "LinkedIn URL":               url,
         }
     except Exception:
         return None
@@ -407,8 +430,15 @@ def fetch_all_combinations(cfg):
     target_companies = cfg.get("target_companies", [])
     combos          = [(lo, wm, ex) for lo in locations for wm in work_modes for ex in exp_levels]
 
+    primary_must_have   = [k.strip() for k in cfg.get("primary_must_have", []) if k.strip()]
+    secondary_must_have = [k.strip() for k in cfg.get("secondary_must_have", []) if k.strip()]
+
     if target_companies:
         log(f"  Company filter active: {target_companies}")
+    if primary_must_have:
+        log(f"  Primary must-have (ALL required): {primary_must_have}")
+    if secondary_must_have:
+        log(f"  Secondary must-have (ANY ONE required): {secondary_must_have}")
     log(f"  Running {len(combos)} search combination(s)")
 
     seen_urls = {}
@@ -514,6 +544,67 @@ def enrich_jobs(jobs, cfg):
             log(f"      ✗ Dropped — job closed: {job.get('Job Title','?')} @ {job.get('Company','?')}")
             continue
 
+        # ── Keyword scoring against full description ──────────────
+        desc_text     = detail.get("description", "")
+        full_text     = (job.get("Job Title","") + " " +
+                         job.get("Company","") + " " +
+                         job.get("Location","") + " " +
+                         desc_text).lower()
+        title_text    = job.get("Job Title","").lower()
+
+        primary_kws   = [k.strip().lower() for k in cfg.get("primary_must_have", []) if k.strip()]
+        secondary_kws = [k.strip().lower() for k in cfg.get("secondary_must_have", []) if k.strip()]
+        preferred_kws = [k.lower() for k in cfg.get("preferred_keywords", [])]
+
+        keywords_configured = bool(primary_kws or secondary_kws)
+
+        # Primary match: YES only if ALL primary keywords are present
+        if primary_kws:
+            primary_hit = all(kw in full_text for kw in primary_kws)
+            job["Primary Keywords Match"] = "Yes" if primary_hit else "No"
+        else:
+            job["Primary Keywords Match"] = "NA"
+            primary_hit = None   # not configured
+
+        # Secondary match: YES if at least ONE secondary keyword is present
+        if secondary_kws:
+            secondary_hit = any(kw in full_text for kw in secondary_kws)
+            job["Secondary Keywords Match"] = "Yes" if secondary_hit else "No"
+        else:
+            job["Secondary Keywords Match"] = "NA"
+            secondary_hit = None   # not configured
+
+        # ── Score (0–100) ─────────────────────────────────────────
+        # Breakdown:
+        #   40 pts — title relevance (preferred keywords in title)
+        #   35 pts — primary keywords (all present = full 35 pts,
+        #             partial = proportional, not configured = 0)
+        #   25 pts — secondary keywords (any present = 25 pts)
+        # If NO keywords configured at all → "NA"
+        if not keywords_configured:
+            job["Score"] = "NA"
+        else:
+            # Title relevance (max 40)
+            title_hits   = sum(1 for p in preferred_kws if p in title_text)
+            title_max    = max(len(preferred_kws), 1)
+            title_score  = round((title_hits / title_max) * 40)
+
+            # Primary score (max 35) — proportional to how many matched
+            if primary_kws:
+                p_matched   = sum(1 for kw in primary_kws if kw in full_text)
+                primary_score = round((p_matched / len(primary_kws)) * 35)
+            else:
+                primary_score = 0
+
+            # Secondary score (max 25) — binary: any hit = full 25
+            if secondary_kws:
+                secondary_score = 25 if secondary_hit else 0
+            else:
+                secondary_score = 0
+
+            job["Score"] = min(title_score + primary_score + secondary_score, 100)
+
+
         # ── Company page: size + type ──────────────────────────────
         company_url  = get_company_page_url(url)
         company_data = scrape_company_bio(company_url)
@@ -554,33 +645,52 @@ def apply_styles_and_dropdown(ws, total_rows):
     from openpyxl.styles import PatternFill as PFill
 
     col_widths = {
-        "A": 14, "B": 34, "C": 22, "D": 22, "E": 28,
-        "F": 16, "G": 18, "H": 12, "I": 12, "J": 42,
-        "K": 10, "L": 14, "M": 16, "N": 18, "O": 14, "P": 65,
+        "A": 14,  # Applied?
+        "B": 34,  # Job Title
+        "C": 22,  # Company
+        "D": 22,  # Company Size
+        "E": 28,  # Company Type
+        "F": 16,  # Level
+        "G": 18,  # Location
+        "H": 12,  # Posted Date
+        "I": 12,  # Easy Apply
+        "J": 42,  # Recruiter Profile
+        "K": 10,  # Score
+        "L": 22,  # Primary Keywords Match
+        "M": 24,  # Secondary Keywords Match
+        "N": 14,  # Work Mode
+        "O": 16,  # Still Accepting?
+        "P": 18,  # Date Searched
+        "Q": 14,  # Exp. Required
+        "R": 65,  # LinkedIn URL
     }
     for col, w in col_widths.items():
         ws.column_dimensions[col].width = w
     ws.freeze_panes = "B2"
 
-    match_col_idx   = COL_ORDER.index("Match")
+    score_col_idx   = COL_ORDER.index("Score")
     url_col_idx     = COL_ORDER.index("LinkedIn URL")
     rec_col_idx     = COL_ORDER.index("Recruiter Profile")
     applied_col_idx = COL_ORDER.index("Applied?")
     title_col_idx   = COL_ORDER.index("Job Title")
 
-    match_fills = {
-        "Strong": PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid"),
-        "Good":   PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid"),
-    }
+    # Score-based row colours (when Applied? is blank)
+    # 80-100 → green, 50-79 → blue, 0-49 → no fill, NA → no fill
+    fill_high = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
+    fill_mid  = PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid")
 
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
         applied_val = str(row[applied_col_idx].value or "").strip()
-        match_val   = row[match_col_idx].value
+        score_val   = row[score_col_idx].value
         if not applied_val:
-            fill = match_fills.get(match_val)
-            if fill:
-                for cell in row:
-                    cell.fill = fill
+            try:
+                s = int(float(str(score_val)))
+                if s >= 80:
+                    for cell in row: cell.fill = fill_high
+                elif s >= 50:
+                    for cell in row: cell.fill = fill_mid
+            except (TypeError, ValueError):
+                pass   # NA or blank — no fill
         # LinkedIn URL hyperlink
         url_cell = row[url_col_idx]
         if url_cell.value and str(url_cell.value).startswith("http"):
@@ -617,6 +727,17 @@ def apply_styles_and_dropdown(ws, total_rows):
         operator="equal", formula=['"Irrelevant - Criteria mismatch"'],
         fill=PFill(start_color="FED7AA", end_color="FED7AA", fill_type="solid")))
 
+    # Keyword match column colouring
+    kw_cols = ["L", "M"]   # Primary Keywords Match, Secondary Keywords Match
+    for col_letter in kw_cols:
+        kw_range = f"{col_letter}2:{col_letter}{max(total_rows + 1, 5000)}"
+        ws.conditional_formatting.add(kw_range, CellIsRule(
+            operator="equal", formula=['"Yes"'],
+            fill=PFill(start_color="BBFBD0", end_color="BBFBD0", fill_type="solid")))
+        ws.conditional_formatting.add(kw_range, CellIsRule(
+            operator="equal", formula=['"No"'],
+            fill=PFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")))
+
 
 def is_file_locked(filepath):
     if not os.path.exists(filepath):
@@ -629,7 +750,7 @@ def is_file_locked(filepath):
 
 
 def save_excel(jobs, cfg):
-    order_map = {"Strong": 0, "Good": 1, "Neutral": 2}
+    # Score column used for sorting — numeric desc, NA last
     filepath  = os.path.join(cfg["output_folder"], cfg["output_filename"])
 
     new_df = pd.DataFrame(jobs) if jobs else pd.DataFrame(columns=COL_ORDER)
@@ -690,10 +811,14 @@ def save_excel(jobs, cfg):
     combined_df["Applied?"] = combined_df.apply(restore_applied, axis=1)
 
     # Sort: newest first, then match quality
-    combined_df["_s"]  = combined_df["Match"].map(order_map).fillna(2)
-    combined_df["_dt"] = pd.to_datetime(combined_df["Date Searched"], errors="coerce")
-    combined_df = combined_df.sort_values(["_dt", "_s"], ascending=[False, True])
-    combined_df = combined_df.drop(columns=["_s", "_dt"])
+    # Sort: latest Date Searched first, then Score descending (NA sorts last)
+    def score_sort_key(val):
+        try:    return -int(float(str(val)))   # negative so higher score = earlier row
+        except: return 1                        # "NA" or blank sorts to end
+    combined_df["_score_key"] = combined_df["Score"].apply(score_sort_key)
+    combined_df["_dt"]        = pd.to_datetime(combined_df["Date Searched"], errors="coerce")
+    combined_df = combined_df.sort_values(["_dt", "_score_key"], ascending=[False, True])
+    combined_df = combined_df.drop(columns=["_score_key", "_dt"])
     combined_df["Date Searched"] = pd.to_datetime(
         combined_df["Date Searched"], errors="coerce"
     ).dt.strftime("%Y-%m-%d %H:%M")
