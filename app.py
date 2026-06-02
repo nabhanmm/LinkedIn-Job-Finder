@@ -267,27 +267,13 @@ def show_main_app():
         # ── Job title ────────────────────────────────────────────
         job_title = st.text_input("🏷️ Job Title", value="Talent Acquisition Manager")
 
-        # ── Locations — quick-select + free-text ─────────────────
-        COMMON_LOCATIONS = [
-            "India", "Kochi", "Bangalore", "Mumbai", "Delhi", "Hyderabad",
-            "Chennai", "Pune", "Bangkok", "Singapore", "Dubai", "Abu Dhabi",
-            "United States", "United Kingdom", "Canada", "Australia", "Remote",
-        ]
-        st.markdown("<div style='font-size:13px; color:#94a3b8; margin-bottom:4px;'>📍 Locations</div>", unsafe_allow_html=True)
-        quick_locs = st.multiselect(
-            "Quick-select locations",
-            options=COMMON_LOCATIONS,
-            default=["India", "Kochi"],
-            label_visibility="collapsed",
+        # ── Locations — single comma-separated text input ────────
+        locations_raw = st.text_input(
+            "📍 Locations (comma-separated)",
+            value="India, Kochi",
+            placeholder="e.g. India, Dubai, Singapore, Remote",
         )
-        custom_locs_raw = st.text_input(
-            "➕ Add more (comma-separated)",
-            placeholder="e.g. Riyadh, Kuala Lumpur, Frankfurt",
-        )
-        custom_locs = [l.strip() for l in custom_locs_raw.split(",") if l.strip()]
-        locations   = list(dict.fromkeys(quick_locs + custom_locs))
-        if locations:
-            st.caption(f"Searching: {', '.join(locations)}")
+        locations = [l.strip() for l in locations_raw.split(",") if l.strip()]
 
         # ── Work mode ────────────────────────────────────────────
         work_modes = st.multiselect(
