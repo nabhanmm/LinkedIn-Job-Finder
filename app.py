@@ -498,18 +498,11 @@ def show_main_app():
                 placeholder="One keyword per line",
             )
 
-        # ── Preferred + Exclude Keywords ──────────────────────────
-        with st.expander("📌 Preferred & Exclude Keywords", expanded=False):
-            filter_label("⬆️", "Preferred Keywords",
-                "Jobs mentioning these words get a higher Score. One per line.")
-            preferred_text = st.text_area(
-                "preferred_kw_input", label_visibility="collapsed",
-                value="analytics\ndata analytics\nIT services\nSaaS\nconsulting\nproduct\ntechnology\nAI\nmachine learning",
-                height=110,
-                placeholder="One keyword per line",
-            )
+        # ── Exclude Keywords ─────────────────────────────────────
+        with st.expander("🚫 Exclude Keywords", expanded=False):
             filter_label("🚫", "Exclude Keywords",
-                "Jobs mentioning ANY of these words are removed entirely from results. One per line.")
+                "Jobs mentioning ANY of these words are removed entirely from results. One per line. "
+                "e.g. BPO, staffing, intern")
             exclude_text = st.text_area(
                 "exclude_kw_input", label_visibility="collapsed",
                 value="BPO\nstaffing\nRPO\njunior\nassociate recruiter\nfresher\nentry level\nintern\nrelocation required",
@@ -577,7 +570,6 @@ def show_main_app():
             job_titles = [t.strip() for t in job_title.split(",") if t.strip()]
             primary_kws   = [k.strip() for k in primary_text.splitlines()   if k.strip()]
             secondary_kws = [k.strip() for k in secondary_text.splitlines() if k.strip()]
-            preferred_kws = [k.strip() for k in preferred_text.splitlines() if k.strip()]
             exclude_kws   = [k.strip() for k in exclude_text.splitlines()   if k.strip()]
             target_cos    = [c.strip() for c in companies_text.splitlines() if c.strip()]
 
@@ -606,7 +598,7 @@ def show_main_app():
                         "max_results":          max_results,
                         "primary_must_have":    primary_kws,
                         "secondary_must_have":  secondary_kws,
-                        "preferred_keywords":   preferred_kws,
+                        "preferred_keywords":   [],
                         "exclude_keywords":     exclude_kws,
                         "target_companies":     target_cos,
                         "exclude_closed_jobs":  exclude_closed,
