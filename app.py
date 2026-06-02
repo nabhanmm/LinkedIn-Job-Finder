@@ -586,63 +586,87 @@ def show_main_app():
             with st.status("Searching LinkedIn…", expanded=True) as status:
                 prog = st.progress(0, text="Starting…")
 
+                # Build shared cfg (same for all titles)
+                cfg_base = {
+                    "location":             locations,
+                    "work_mode":            work_modes,
+                    "experience_level":     exp_levels,
+                    "job_type":             job_type,
+                    "posted_within_days":   posted_days,
+                    "min_years_experience": int(min_exp),
+                    "max_results":          max_results,
+                    "primary_must_have":    primary_kws,
+                    "secondary_must_have":  secondary_kws,
+                    "preferred_keywords":   [],
+                    "exclude_keywords":     exclude_kws,
+                    "target_companies":     target_cos,
+                    "exclude_closed_jobs":  exclude_closed,
+                    "skills":               [],
+                    "output_folder":        ".",
+                    "output_filename":      "linkedin_jobs_web.xlsx",
+                    "email_from":           email_from if "email_from" in dir() else "",
+                    "email_password":       email_password if "email_password" in dir() else "",
+                    "email_to":             email_to if "email_to" in dir() else "",
+                    "email_smtp":           "smtp.gmail.com",
+                    "email_port":           587,
+                    "schedule_time":        "10:00",
+                }
+
+                # ── Step 1: Fetch all cards across all titles ────────────
+                raw_fetched = []
                 for ti, jt in enumerate(job_titles):
-                    cfg = {
-                        "job_title":            jt,
-                        "location":             locations,
-                        "work_mode":            work_modes,
-                        "experience_level":     exp_levels,
-                        "job_type":             job_type,
-                        "posted_within_days":   posted_days,
-                        "min_years_experience": int(min_exp),
-                        "max_results":          max_results,
-                        "primary_must_have":    primary_kws,
-                        "secondary_must_have":  secondary_kws,
-                        "preferred_keywords":   [],
-                        "exclude_keywords":     exclude_kws,
-                        "target_companies":     target_cos,
-                        "exclude_closed_jobs":  exclude_closed,
-                        "skills":               [],
-                        "output_folder":        ".",
-                        "output_filename":      "linkedin_jobs_web.xlsx",
-                        "email_from":           email_from if 'email_from' in dir() else "",
-                        "email_password":       email_password if 'email_password' in dir() else "",
-                        "email_to":             email_to if 'email_to' in dir() else "",
-                        "email_smtp":           "smtp.gmail.com",
-                        "email_port":           587,
-                        "schedule_time":        "10:00",
-                    }
-
-                    st.write(f"**Title {ti+1}/{len(job_titles)}:** {jt} · {', '.join(locations)}")
+                    cfg = {**cfg_base, "job_title": jt}
+                    st.write(f"**Step 1/{len(job_titles)+2} — Fetching:** {jt}")
                     fetched = lj.fetch_all_combinations(cfg)
-                    prog.progress(int(30 + 20 * ti / len(job_titles)), text=f"{len(fetched)} found for '{jt}'…")
+                    raw_fetched.extend(fetched)
+                    prog.progress(int(25 * (ti + 1) / len(job_titles)), text=f"{len(raw_fetched)} raw listings fetched…")
 
-                    st.write(f"  Enriching {len(fetched)} jobs…")
-                    enriched = lj.enrich_jobs(fetched, cfg)
-                    all_jobs.extend(enriched)
-                    prog.progress(int(60 + 30 * (ti+1) / len(job_titles)), text="Enriching…")
-
-                # Deduplicate across titles by URL
-                seen_urls = set()
-                deduped = []
-                for j in all_jobs:
+                # ── Step 2: Dedup across titles AND against repository ────
+                st.write(f"**Step {len(job_titles)+1}/{len(job_titles)+2} — Deduplicating {len(raw_fetched)} listings…**")
+                seen_urls_local = set()
+                unique_fetched = []
+                for j in raw_fetched:
                     u = j.get("LinkedIn URL", "")
-                    if u not in seen_urls:
-                        seen_urls.add(u)
-                        deduped.append(j)
-                all_jobs = deduped
+                    if u and u not in seen_urls_local:
+                        seen_urls_local.add(u)
+                        unique_fetched.append(j)
+                    elif not u:
+                        unique_fetched.append(j)
 
-                if not all_jobs:
-                    status.update(label="No results found", state="error")
-                    st.warning("No jobs found. Try broader filters — more locations, longer time window, or different experience levels.")
+                # Check against Supabase repository
+                existing_repo_urls = get_existing_urls(user.id)
+                new_only = [j for j in unique_fetched if j.get("LinkedIn URL", "") not in existing_repo_urls]
+                already_seen = len(unique_fetched) - len(new_only)
+
+                prog.progress(35, text=f"{len(new_only)} new · {already_seen} already in repository — skipping enrichment on duplicates…")
+                st.write(f"  ✅ {len(new_only)} new jobs to enrich · ⏭️ {already_seen} already in your repository — skipped")
+
+                if not new_only:
+                    status.update(label="No new jobs found — all results already in your repository", state="complete")
+                    st.session_state.results   = []
+                    st.session_state.new_count = 0
+                    st.session_state.dup_count = already_seen
                     st.stop()
 
+                # ── Step 3: Enrich only the new jobs ────────────────────
+                st.write(f"**Step {len(job_titles)+2}/{len(job_titles)+2} — Enriching {len(new_only)} new jobs** (Easy Apply · score · company info)…")
+                st.caption("~2 seconds per job — only new jobs are enriched, duplicates skipped.")
+                cfg_enrich = {**cfg_base, "job_title": job_titles[0]}
+                all_jobs = lj.enrich_jobs(new_only, cfg_enrich)
                 prog.progress(90, text="Saving to repository…")
-                st.write("Deduplicating and saving to your repository…")
+
+                if not all_jobs:
+                    status.update(label="No results passed filters", state="error")
+                    st.warning("No jobs passed the filters after enrichment. Try adjusting your keyword or experience filters.")
+                    st.stop()
+
+                st.write("Saving to your repository…")
                 new_count, dup_count = append_new_jobs(all_jobs, user)
+                # dup_count from append_new_jobs covers any last-mile dups
+                total_dup = already_seen + dup_count
                 st.session_state.results   = all_jobs
                 st.session_state.new_count = new_count
-                st.session_state.dup_count = dup_count
+                st.session_state.dup_count = total_dup
 
                 prog.progress(100, text="Done!")
                 label = f"✅ Done! {new_count} new job(s) saved to your repository"
@@ -677,25 +701,51 @@ def show_main_app():
             m6.metric("Still Open",     len(df[df["Still Accepting?"] == "Yes"]))
 
             st.markdown("---")
-            f1, f2, f3, f4 = st.columns(4)
+
+            # Generation counter for clear-filter reset
+            if "sr_filter_gen" not in st.session_state:
+                st.session_state.sr_filter_gen = 0
+            sr_gen = st.session_state.sr_filter_gen
+
             all_easy    = sorted(df["Easy Apply"].dropna().unique().tolist())
             all_open    = sorted(df["Still Accepting?"].dropna().unique().tolist())
             all_locs    = sorted(df["Location"].dropna().unique().tolist())
-            all_p_match = sorted(df["Primary Keywords Match"].dropna().unique().tolist())
+            all_p_match = sorted(df["Primary Keywords Match"].dropna().unique().tolist()) if "Primary Keywords Match" in df.columns else []
 
-            sel_easy    = f1.multiselect("Easy Apply",         all_easy,    default=all_easy,    key="sr_e")
-            sel_open    = f2.multiselect("Still Accepting",    all_open,    default=all_open,    key="sr_o")
-            sel_loc     = f3.multiselect("Location",           all_locs,    default=all_locs,    key="sr_l")
-            sel_pmatch  = f4.multiselect("Primary KW Match",   all_p_match, default=all_p_match, key="sr_pm")
+            filter_row_sr, btn_col_sr = st.columns([5, 1])
+            with btn_col_sr:
+                st.markdown("<div style='margin-top:4px'></div>", unsafe_allow_html=True)
+                if st.button("🔄 Clear Filters", use_container_width=True,
+                             help="Reset all filters to show all results", key="sr_clear"):
+                    st.session_state.sr_filter_gen += 1
+                    st.rerun()
+
+            with filter_row_sr:
+                f1, f2, f3, f4 = st.columns(4)
+                sel_easy   = f1.multiselect("Easy Apply",       all_easy,    default=all_easy,    key=f"sr_e_{sr_gen}")
+                sel_open   = f2.multiselect("Still Accepting",  all_open,    default=all_open,    key=f"sr_o_{sr_gen}")
+                sel_loc    = f3.multiselect("Location",         all_locs,    default=all_locs,    key=f"sr_l_{sr_gen}")
+                sel_pmatch = f4.multiselect("Primary KW Match", all_p_match, default=all_p_match, key=f"sr_pm_{sr_gen}")
+
+            # Empty filter = show all for that dimension
+            active_easy   = sel_easy   if sel_easy   else all_easy
+            active_open   = sel_open   if sel_open   else all_open
+            active_loc    = sel_loc    if sel_loc    else all_locs
+            active_pmatch = sel_pmatch if sel_pmatch else all_p_match
 
             mask = (
-                df["Easy Apply"].isin(sel_easy) &
-                df["Still Accepting?"].isin(sel_open) &
-                df["Location"].isin(sel_loc) &
-                df["Primary Keywords Match"].isin(sel_pmatch)
+                df["Easy Apply"].isin(active_easy) &
+                df["Still Accepting?"].isin(active_open) &
+                df["Location"].isin(active_loc)
             )
+            if all_p_match:
+                mask = mask & df["Primary Keywords Match"].isin(active_pmatch)
             fdf = df[mask].copy()
-            st.caption(f"Showing **{len(fdf)}** of **{len(df)}** results")
+
+            filter_active_sr = (sel_easy != all_easy or sel_open != all_open
+                                or sel_loc != all_locs or sel_pmatch != all_p_match)
+            sr_filter_note = " · 🔽 Filters active" if filter_active_sr else ""
+            st.caption(f"Showing **{len(fdf)}** of **{len(df)}** results{sr_filter_note}")
 
             st.dataframe(
                 fdf, use_container_width=True, hide_index=True, height=460,
