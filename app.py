@@ -264,6 +264,71 @@ def show_main_app():
 
         st.markdown("---")
 
+        # ── How to use — info panel ───────────────────────────────
+        with st.expander("ℹ️  How to fill these filters — click to read", expanded=False):
+            st.markdown("""
+<div style="background:#0f172a; border-radius:10px; padding:14px 16px; margin-bottom:4px;">
+
+<div style="color:#38bdf8; font-size:13px; font-weight:600; margin-bottom:10px; letter-spacing:0.03em;">
+🗺️ QUICK START — fill in order top to bottom
+</div>
+
+<table style="width:100%; border-collapse:collapse; font-size:12px; color:#e2e8f0;">
+<tr style="border-bottom:1px solid #1e293b;">
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">🏷️ Job Title</td>
+  <td style="padding:7px 8px; vertical-align:top;">The role you are looking for.<br>
+    <span style="color:#94a3b8;">e.g. <em>Talent Acquisition Manager</em></span></td>
+</tr>
+<tr style="border-bottom:1px solid #1e293b;">
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">📍 Locations</td>
+  <td style="padding:7px 8px; vertical-align:top;">Any city, country, or <em>Remote</em> — comma separated.<br>
+    <span style="color:#94a3b8;">e.g. <em>India, Dubai, Singapore, Remote</em></span></td>
+</tr>
+<tr style="border-bottom:1px solid #1e293b;">
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">💼 Work Mode</td>
+  <td style="padding:7px 8px; vertical-align:top;"><b>Remote</b> = fully from home &nbsp;·&nbsp; <b>Hybrid</b> = mix &nbsp;·&nbsp; <b>Onsite</b> = office only</td>
+</tr>
+<tr style="border-bottom:1px solid #1e293b;">
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">📊 Exp. Level</td>
+  <td style="padding:7px 8px; vertical-align:top;">Seniority of the role. <em>Mid-Senior</em> suits 8+ yrs experience.</td>
+</tr>
+<tr style="border-bottom:1px solid #1e293b;">
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">📋 Job Type</td>
+  <td style="padding:7px 8px; vertical-align:top;">Full-time · Contract · Part-time · Any</td>
+</tr>
+<tr style="border-bottom:1px solid #1e293b;">
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">📅 Posted Within</td>
+  <td style="padding:7px 8px; vertical-align:top;">How recently the job was posted. <em>Last 7 days</em> gives fresh results; use <em>Last 30 days</em> for more volume.</td>
+</tr>
+<tr style="border-bottom:1px solid #1e293b;">
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">👤 Min Exp</td>
+  <td style="padding:7px 8px; vertical-align:top;">Filters out jobs that require less experience than this. Set to <em>0</em> to see all.</td>
+</tr>
+<tr style="border-bottom:1px solid #1e293b;">
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">📦 Max Results</td>
+  <td style="padding:7px 8px; vertical-align:top;">How many jobs to fetch. More results = longer load time (~2 sec each). Start with 25.</td>
+</tr>
+<tr style="border-bottom:1px solid #1e293b;">
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">🎯 Keywords</td>
+  <td style="padding:7px 8px; vertical-align:top;"><b>Preferred</b> — boosts match score &nbsp;·&nbsp; <b>Exclude</b> — removes matching jobs entirely.</td>
+</tr>
+<tr style="border-bottom:1px solid #1e293b;">
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">🛠️ Skills</td>
+  <td style="padding:7px 8px; vertical-align:top;">Your skills — used to calculate the Match score (Strong / Good / Neutral) for each job.</td>
+</tr>
+<tr>
+  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">🏢 Company</td>
+  <td style="padding:7px 8px; vertical-align:top;">Leave blank to search all companies. Add specific names (one per line) to target only those.</td>
+</tr>
+</table>
+
+<div style="margin-top:12px; padding:8px 10px; background:#1e293b; border-radius:6px; font-size:11px; color:#94a3b8; line-height:1.7;">
+  💡 <b style="color:#e2e8f0;">Tip:</b> Start broad — use <em>Last 14 days</em>, a few locations, and <em>Max Results: 25</em>. Narrow down after seeing first results.<br>
+  🔁 <b style="color:#e2e8f0;">Duplicates:</b> Jobs already in your repository are automatically skipped — no need to worry about re-running the same search.
+</div>
+</div>
+""", unsafe_allow_html=True)
+
         # ── Job title ────────────────────────────────────────────
         job_title = st.text_input("🏷️ Job Title", value="Talent Acquisition Manager")
 
