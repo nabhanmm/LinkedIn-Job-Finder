@@ -1,7 +1,11 @@
 """
-LinkedIn Job Finder — v3
-Fully synced with linkedin_jobs.py v5 (final).
-Features: Auth (Supabase), Repository, Deduplication, Status Tracking, Free-form Locations
+LinkedIn Job Finder — v4
+Synced with linkedin_jobs.py v6:
+  - primary_must_have / secondary_must_have / Score columns
+  - Skills filter removed (replaced by keyword scoring)
+  - Match column replaced by Score
+  - Hover tooltips on every filter (info icon)
+  - Font / cursor / visibility fixes
 """
 
 import io
@@ -24,42 +28,165 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────────────────────────
-# CSS
+# CSS — fixes all visibility issues + hover tooltips
 # ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono&display=swap');
 html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 
+/* ── Sidebar background ── */
 [data-testid="stSidebar"] { background: #0f172a; }
 [data-testid="stSidebar"] * { color: #e2e8f0 !important; }
+
+/* ── Sidebar inputs — dark background, DARK text so it's visible ── */
 [data-testid="stSidebar"] .stTextInput input,
 [data-testid="stSidebar"] .stTextArea textarea {
-    background: #1e293b !important; border: 1px solid #334155 !important; color: #f1f5f9 !important;
+    background: #1e293b !important;
+    border: 1px solid #475569 !important;
+    color: #f1f5f9 !important;
+    caret-color: #ef4444 !important;
 }
+[data-testid="stSidebar"] .stTextInput input::placeholder,
+[data-testid="stSidebar"] .stTextArea textarea::placeholder {
+    color: #64748b !important;
+}
+
+/* ── Selectbox — make selected value text dark/visible ── */
+[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] > div,
+[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] span,
+[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] div[class*="ValueContainer"] {
+    background: #1e293b !important;
+    color: #f1f5f9 !important;
+}
+[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] * {
+    color: #f1f5f9 !important;
+}
+/* Fix Sign Out button text */
+[data-testid="stSidebar"] .stButton > button {
+    color: #1e293b !important;
+    background: #e2e8f0 !important;
+    border: none !important;
+    border-radius: 6px !important;
+    font-weight: 500 !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: #cbd5e1 !important;
+}
+
+/* ── Multiselect tags ── */
 [data-testid="stSidebar"] .stMultiSelect > div {
-    background: #1e293b !important; border: 1px solid #334155 !important;
+    background: #1e293b !important;
+    border: 1px solid #475569 !important;
 }
+[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] {
+    background: #2563eb !important;
+}
+
+/* ── Select slider ── */
+[data-testid="stSidebar"] .stSlider * { color: #e2e8f0 !important; }
+
+/* ── Number input ── */
+[data-testid="stSidebar"] .stNumberInput input {
+    background: #1e293b !important;
+    border: 1px solid #475569 !important;
+    color: #f1f5f9 !important;
+}
+
+/* ── Metrics ── */
 [data-testid="metric-container"] {
     background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px;
 }
 [data-testid="stMetricValue"] { font-size: 2rem !important; font-weight: 600 !important; color: #0f172a !important; }
 [data-testid="stMetricLabel"] { color: #64748b !important; font-size: 0.8rem !important; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ── Primary action button ── */
 .stButton > button[kind="primary"] {
     background: #2563eb !important; color: white !important; border: none !important;
     border-radius: 8px !important; font-weight: 600 !important; height: 48px !important; font-size: 1rem !important;
 }
 .stButton > button[kind="primary"]:hover { background: #1d4ed8 !important; }
+
+/* ── Download buttons ── */
 .stDownloadButton > button { border-radius: 8px !important; font-weight: 500 !important; }
+
+/* ── Dataframe ── */
 [data-testid="stDataFrame"] { border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+
+/* ── Live log box ── */
 .log-box {
     background: #0f172a; color: #a3e635; font-family: 'DM Mono', monospace;
     font-size: 0.78rem; padding: 12px 16px; border-radius: 8px;
     max-height: 200px; overflow-y: auto; white-space: pre-wrap; line-height: 1.6;
 }
+
 hr { border-color: #e2e8f0 !important; margin: 1.2rem 0 !important; }
+
+/* ── Tooltip (ℹ hover) ── */
+.filter-label-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    color: #e2e8f0;
+    font-size: 13px;
+}
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #334155;
+    color: #94a3b8 !important;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: help;
+    position: relative;
+    flex-shrink: 0;
+    line-height: 1;
+}
+.info-icon:hover { background: #2563eb; color: #fff !important; }
+.info-icon .tooltip-text {
+    visibility: hidden;
+    opacity: 0;
+    width: 220px;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-size: 11px;
+    line-height: 1.5;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 7px;
+    border: 1px solid #334155;
+    position: absolute;
+    left: 22px;
+    top: -4px;
+    z-index: 9999;
+    transition: opacity 0.15s;
+    font-weight: 400;
+    pointer-events: none;
+}
+.info-icon:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
 </style>
 """, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────
+# Tooltip helper — renders label + ℹ icon with hover tooltip
+# ─────────────────────────────────────────────────────────────────
+def filter_label(icon, label, tip):
+    st.markdown(f"""
+    <div class="filter-label-row">
+      <span>{icon} {label}</span>
+      <span class="info-icon">i
+        <span class="tooltip-text">{tip}</span>
+      </span>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -155,26 +282,28 @@ def append_new_jobs(jobs, user):
         return 0, dup_count
     username = (user.user_metadata or {}).get("username", "")
     rows = [{
-        "user_id":           user.id,
-        "user_email":        user.email,
-        "username":          username,
-        "job_title":         j.get("Job Title", ""),
-        "company":           j.get("Company", ""),
-        "company_size":      j.get("Company Size", ""),
-        "company_type":      j.get("Company Type", ""),
-        "level":             j.get("Level", ""),
-        "location":          j.get("Location", ""),
-        "work_mode":         j.get("Work Mode", ""),
-        "linkedin_url":      j.get("LinkedIn URL", ""),
-        "match":             j.get("Match", ""),
-        "easy_apply":        j.get("Easy Apply", ""),
-        "still_accepting":   j.get("Still Accepting?", ""),
-        "posted_date":       j.get("Posted Date", ""),
-        "date_searched":     j.get("Date Searched", ""),
-        "exp_required":      j.get("Exp. Required", ""),
-        "recruiter_profile": j.get("Recruiter Profile", ""),
-        "status":            "New",
-        "date_added":        datetime.now().isoformat(),
+        "user_id":                   user.id,
+        "user_email":                user.email,
+        "username":                  username,
+        "job_title":                 j.get("Job Title", ""),
+        "company":                   j.get("Company", ""),
+        "company_size":              j.get("Company Size", ""),
+        "company_type":              j.get("Company Type", ""),
+        "level":                     j.get("Level", ""),
+        "location":                  j.get("Location", ""),
+        "work_mode":                 j.get("Work Mode", ""),
+        "linkedin_url":              j.get("LinkedIn URL", ""),
+        "score":                     str(j.get("Score", "")),
+        "primary_keywords_match":    j.get("Primary Keywords Match", ""),
+        "secondary_keywords_match":  j.get("Secondary Keywords Match", ""),
+        "easy_apply":                j.get("Easy Apply", ""),
+        "still_accepting":           j.get("Still Accepting?", ""),
+        "posted_date":               j.get("Posted Date", ""),
+        "date_searched":             j.get("Date Searched", ""),
+        "exp_required":              j.get("Exp. Required", ""),
+        "recruiter_profile":         j.get("Recruiter Profile", ""),
+        "status":                    "New",
+        "date_added":                datetime.now().isoformat(),
     } for j in new_jobs]
     supabase.table("job_repository").insert(rows).execute()
     return len(new_jobs), dup_count
@@ -215,10 +344,8 @@ def show_auth_page():
                 for e in errors: st.error(e)
                 if not errors:
                     user, err = do_signup(email.strip(), pw, username.strip())
-                    if err:
-                        st.error(f"Sign up failed: {err}")
-                    else:
-                        st.success("✅ Account created! Check your email for a verification link, then Sign In.")
+                    if err:   st.error(f"Sign up failed: {err}")
+                    else:     st.success("✅ Account created! Check your email for a verification link, then Sign In.")
         else:
             email = st.text_input("Email address")
             pw    = st.text_input("Password", type="password")
@@ -244,7 +371,7 @@ def show_auth_page():
 
 
 # ─────────────────────────────────────────────────────────────────
-# MAIN APP (authenticated)
+# MAIN APP
 # ─────────────────────────────────────────────────────────────────
 def show_main_app():
     user     = st.session_state.user
@@ -253,6 +380,8 @@ def show_main_app():
     # ── Sidebar ──────────────────────────────────────────────────
     with st.sidebar:
         st.markdown("## 🔍 Job Search Filters")
+
+        # User badge + sign out
         st.markdown(f"""
         <div style='background:#1e293b; border-radius:8px; padding:10px 14px; margin-bottom:10px;'>
             <div style='font-size:13px; font-weight:500;'>👤 {username}</div>
@@ -264,155 +393,146 @@ def show_main_app():
 
         st.markdown("---")
 
-        # ── How to use — info panel ───────────────────────────────
-        with st.expander("ℹ️  How to fill these filters — click to read", expanded=False):
-            st.markdown("""
-<div style="background:#0f172a; border-radius:10px; padding:14px 16px; margin-bottom:4px;">
+        # ── Job Title ─────────────────────────────────────────────
+        filter_label("🏷️", "Job Title",
+            "The role you are searching for. You can add multiple titles separated by commas. "
+            "e.g. Talent Acquisition Manager, HR Business Partner, TA Lead")
+        job_title = st.text_input(
+            "job_title_input", label_visibility="collapsed",
+            value="Talent Acquisition Manager, Head of Recruiting",
+            placeholder="e.g. Talent Acquisition Manager, TA Lead",
+        )
 
-<div style="color:#38bdf8; font-size:13px; font-weight:600; margin-bottom:10px; letter-spacing:0.03em;">
-🗺️ QUICK START — fill in order top to bottom
-</div>
-
-<table style="width:100%; border-collapse:collapse; font-size:12px; color:#e2e8f0;">
-<tr style="border-bottom:1px solid #1e293b;">
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">🏷️ Job Title</td>
-  <td style="padding:7px 8px; vertical-align:top;">The role you are looking for.<br>
-    <span style="color:#94a3b8;">e.g. <em>Talent Acquisition Manager</em></span></td>
-</tr>
-<tr style="border-bottom:1px solid #1e293b;">
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">📍 Locations</td>
-  <td style="padding:7px 8px; vertical-align:top;">Any city, country, or <em>Remote</em> — comma separated.<br>
-    <span style="color:#94a3b8;">e.g. <em>India, Dubai, Singapore, Remote</em></span></td>
-</tr>
-<tr style="border-bottom:1px solid #1e293b;">
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">💼 Work Mode</td>
-  <td style="padding:7px 8px; vertical-align:top;"><b>Remote</b> = fully from home &nbsp;·&nbsp; <b>Hybrid</b> = mix &nbsp;·&nbsp; <b>Onsite</b> = office only</td>
-</tr>
-<tr style="border-bottom:1px solid #1e293b;">
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">📊 Exp. Level</td>
-  <td style="padding:7px 8px; vertical-align:top;">Seniority of the role. <em>Mid-Senior</em> suits 8+ yrs experience.</td>
-</tr>
-<tr style="border-bottom:1px solid #1e293b;">
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">📋 Job Type</td>
-  <td style="padding:7px 8px; vertical-align:top;">Full-time · Contract · Part-time · Any</td>
-</tr>
-<tr style="border-bottom:1px solid #1e293b;">
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">📅 Posted Within</td>
-  <td style="padding:7px 8px; vertical-align:top;">How recently the job was posted. <em>Last 7 days</em> gives fresh results; use <em>Last 30 days</em> for more volume.</td>
-</tr>
-<tr style="border-bottom:1px solid #1e293b;">
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">👤 Min Exp</td>
-  <td style="padding:7px 8px; vertical-align:top;">Filters out jobs that require less experience than this. Set to <em>0</em> to see all.</td>
-</tr>
-<tr style="border-bottom:1px solid #1e293b;">
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">📦 Max Results</td>
-  <td style="padding:7px 8px; vertical-align:top;">How many jobs to fetch. More results = longer load time (~2 sec each). Start with 25.</td>
-</tr>
-<tr style="border-bottom:1px solid #1e293b;">
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">🎯 Keywords</td>
-  <td style="padding:7px 8px; vertical-align:top;"><b>Preferred</b> — boosts match score &nbsp;·&nbsp; <b>Exclude</b> — removes matching jobs entirely.</td>
-</tr>
-<tr style="border-bottom:1px solid #1e293b;">
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">🛠️ Skills</td>
-  <td style="padding:7px 8px; vertical-align:top;">Your skills — used to calculate the Match score (Strong / Good / Neutral) for each job.</td>
-</tr>
-<tr>
-  <td style="padding:7px 6px; color:#94a3b8; white-space:nowrap; vertical-align:top;">🏢 Company</td>
-  <td style="padding:7px 8px; vertical-align:top;">Leave blank to search all companies. Add specific names (one per line) to target only those.</td>
-</tr>
-</table>
-
-<div style="margin-top:12px; padding:8px 10px; background:#1e293b; border-radius:6px; font-size:11px; color:#94a3b8; line-height:1.7;">
-  💡 <b style="color:#e2e8f0;">Tip:</b> Start broad — use <em>Last 14 days</em>, a few locations, and <em>Max Results: 25</em>. Narrow down after seeing first results.<br>
-  🔁 <b style="color:#e2e8f0;">Duplicates:</b> Jobs already in your repository are automatically skipped — no need to worry about re-running the same search.
-</div>
-</div>
-""", unsafe_allow_html=True)
-
-        # ── Job title ────────────────────────────────────────────
-        job_title = st.text_input("🏷️ Job Title", value="Talent Acquisition Manager")
-
-        # ── Locations — single comma-separated text input ────────
+        # ── Locations ─────────────────────────────────────────────
+        filter_label("📍", "Locations (comma-separated)",
+            "Type any city, country, or Remote — separated by commas. "
+            "e.g. India, Dubai, Singapore, Remote, United States")
         locations_raw = st.text_input(
-            "📍 Locations (comma-separated)",
+            "locations_input", label_visibility="collapsed",
             value="India, Kochi",
             placeholder="e.g. India, Dubai, Singapore, Remote",
         )
         locations = [l.strip() for l in locations_raw.split(",") if l.strip()]
 
-        # ── Work mode ────────────────────────────────────────────
+        # ── Work Mode ─────────────────────────────────────────────
+        filter_label("💼", "Work Mode",
+            "Remote = fully from home · Hybrid = mix of office and home · Onsite = office only. "
+            "Select one or more.")
         work_modes = st.multiselect(
-            "💼 Work Mode",
+            "work_mode_input", label_visibility="collapsed",
             options=["remote", "hybrid", "onsite"],
             default=["remote", "hybrid"],
         )
 
-        # ── Experience levels (synced to linkedin_jobs.py EXP_MAP) ──
+        # ── Experience Level ──────────────────────────────────────
+        filter_label("📊", "Experience Level",
+            "Seniority of roles to include. Mid-Senior suits 8+ years of experience. "
+            "Select multiple to widen the search.")
         exp_levels = st.multiselect(
-            "📊 Experience Level",
-            options=["internship", "entry", "associate", "mid-senior", "director", "executive"],
+            "exp_level_input", label_visibility="collapsed",
+            options=["internship", "entry", "associate", "mid-senior", "director", "executive", "any"],
             default=["mid-senior"],
         )
 
-        # ── Job type (synced to JOB_TYPE_MAP) ───────────────────
+        # ── Job Type ──────────────────────────────────────────────
+        filter_label("📋", "Job Type",
+            "Full-time = permanent role · Contract = fixed term · Part-time · Any = all types.")
         job_type = st.selectbox(
-            "📋 Job Type",
+            "job_type_input", label_visibility="collapsed",
             options=["full-time", "contract", "part-time", "any"],
             index=0,
         )
 
-        # ── Posted within / Min exp / Max results ────────────────
+        # ── Posted Within ─────────────────────────────────────────
+        filter_label("📅", "Posted Within",
+            "How recently the job was posted on LinkedIn. Last 7 days gives fresh results. "
+            "Use Last 30 days for more volume in niche roles.")
         posted_days = st.select_slider(
-            "📅 Posted Within",
-            options=[1, 3, 7, 14, 30],
-            value=7,
+            "posted_days_input", label_visibility="collapsed",
+            options=[1, 3, 7, 14, 30], value=7,
             format_func=lambda x: f"Last {x} day{'s' if x > 1 else ''}",
         )
+
+        # ── Min Exp / Max Results ─────────────────────────────────
         col_a, col_b = st.columns(2)
-        min_exp     = col_a.number_input("Min Exp (yrs)", min_value=0, max_value=30, value=8, step=1)
-        max_results = col_b.selectbox("Max Results", [10, 25, 50, 75, 100], index=2)
+        with col_a:
+            filter_label("👤", "Min Exp (yrs)",
+                "Jobs requiring fewer years than this will be filtered out. Set to 0 to see all.")
+            min_exp = st.number_input(
+                "min_exp_input", label_visibility="collapsed",
+                min_value=0, max_value=30, value=0, step=1,
+            )
+        with col_b:
+            filter_label("📦", "Max Results",
+                "Max job listings to fetch. More = longer load time (~2 sec each). Start with 25.")
+            max_results = st.selectbox(
+                "max_results_input", label_visibility="collapsed",
+                options=[10, 25, 50, 75, 100], index=2,
+            )
 
         st.markdown("---")
 
-        # ── Keyword filters (synced to CONFIG) ───────────────────
-        with st.expander("🎯 Keyword Filters", expanded=False):
+        # ── Primary Must-have Keywords ────────────────────────────
+        with st.expander("🎯 Primary Keywords (AND — ALL must match)", expanded=False):
+            filter_label("✅", "Primary Must-have",
+                "ALL words listed here must appear in the job description. "
+                "e.g. recruitment, hiring means the job must mention BOTH words. "
+                "Leave empty to disable this filter.")
+            primary_text = st.text_area(
+                "primary_kw_input", label_visibility="collapsed",
+                value="recruitment\nhiring",
+                height=90,
+                placeholder="One keyword per line",
+            )
+
+        # ── Secondary Must-have Keywords ──────────────────────────
+        with st.expander("🎯 Secondary Keywords (OR — ANY one must match)", expanded=False):
+            filter_label("🔍", "Secondary Must-have",
+                "At least ONE word from this list must appear in the job description. "
+                "e.g. SaaS, analytics, IT services means ANY one of these must be present. "
+                "Leave empty to disable.")
+            secondary_text = st.text_area(
+                "secondary_kw_input", label_visibility="collapsed",
+                value="analytics",
+                height=90,
+                placeholder="One keyword per line",
+            )
+
+        # ── Preferred + Exclude Keywords ──────────────────────────
+        with st.expander("📌 Preferred & Exclude Keywords", expanded=False):
+            filter_label("⬆️", "Preferred Keywords",
+                "Jobs mentioning these words get a higher Score. One per line.")
             preferred_text = st.text_area(
-                "✅ Preferred Keywords (one per line)",
-                value="\n".join([
-                    "analytics", "data analytics", "IT services", "SaaS",
-                    "consulting", "product", "technology", "AI", "machine learning"
-                ]),
-                height=130,
+                "preferred_kw_input", label_visibility="collapsed",
+                value="analytics\ndata analytics\nIT services\nSaaS\nconsulting\nproduct\ntechnology\nAI\nmachine learning",
+                height=110,
+                placeholder="One keyword per line",
             )
+            filter_label("🚫", "Exclude Keywords",
+                "Jobs mentioning ANY of these words are removed entirely from results. One per line.")
             exclude_text = st.text_area(
-                "🚫 Exclude Keywords (one per line)",
-                value="\n".join([
-                    "BPO", "staffing", "RPO", "junior", "associate recruiter",
-                    "fresher", "entry level", "intern", "relocation required"
-                ]),
-                height=120,
+                "exclude_kw_input", label_visibility="collapsed",
+                value="BPO\nstaffing\nRPO\njunior\nassociate recruiter\nfresher\nentry level\nintern\nrelocation required",
+                height=110,
+                placeholder="One keyword per line",
             )
 
-        # ── Skills (used in enrich / matching) ───────────────────
-        with st.expander("🛠️ Skills", expanded=False):
-            skills_text = st.text_area(
-                "Skills (one per line)",
-                value="\n".join([
-                    "ATS", "sourcing", "recruitment", "talent acquisition",
-                    "hiring", "Excel", "Power Automate", "Power BI"
-                ]),
-                height=120,
-            )
-
-        # ── Company & closed jobs ─────────────────────────────────
+        # ── Company Filter ────────────────────────────────────────
         with st.expander("🏢 Company Filter", expanded=False):
+            filter_label("🏢", "Target Companies",
+                "Leave blank to search all companies. Add company names (one per line) "
+                "to restrict results to only those companies. Partial names work — "
+                "'Fractal' will match 'Fractal Analytics', 'Fractal AI', etc.")
             companies_text = st.text_area(
-                "Target Companies (leave empty = all companies)",
-                value="",
-                height=70,
+                "companies_input", label_visibility="collapsed",
+                value="", height=70,
                 placeholder="e.g.\nFractal\nInfosys\nTata",
             )
-            exclude_closed = st.toggle("Hide closed jobs", value=True)
+            filter_label("🔒", "Hide Closed Jobs",
+                "Toggle ON to exclude jobs that are no longer accepting applications.")
+            exclude_closed = st.toggle(
+                "exclude_closed_input", label_visibility="collapsed", value=True,
+            )
 
         # ── Email ─────────────────────────────────────────────────
         with st.expander("📧 Email Results (optional)", expanded=False):
@@ -445,70 +565,90 @@ def show_main_app():
         """, unsafe_allow_html=True)
 
         if run:
-            # Validation
             errors = []
-            if not job_title.strip(): errors.append("Job Title cannot be empty.")
-            if not locations:         errors.append("Select or type at least one Location.")
-            if not work_modes:        errors.append("Select at least one Work Mode.")
-            if not exp_levels:        errors.append("Select at least one Experience Level.")
+            if not job_title.strip():  errors.append("Job Title cannot be empty.")
+            if not locations:          errors.append("Enter at least one Location.")
+            if not work_modes:         errors.append("Select at least one Work Mode.")
+            if not exp_levels:         errors.append("Select at least one Experience Level.")
             for e in errors: st.error(e)
             if errors: st.stop()
 
-            cfg = {
-                "job_title":            job_title.strip(),
-                "location":             locations,
-                "work_mode":            work_modes,
-                "experience_level":     exp_levels,
-                "job_type":             job_type,
-                "posted_within_days":   posted_days,
-                "min_years_experience": int(min_exp),
-                "max_results":          max_results,
-                "preferred_keywords":   [k.strip() for k in preferred_text.splitlines() if k.strip()],
-                "exclude_keywords":     [k.strip() for k in exclude_text.splitlines() if k.strip()],
-                "skills":               [s.strip() for s in skills_text.splitlines() if s.strip()],
-                "target_companies":     [c.strip() for c in companies_text.splitlines() if c.strip()],
-                "exclude_closed_jobs":  exclude_closed,
-                "output_folder":        ".",
-                "output_filename":      "linkedin_jobs_web.xlsx",
-                "email_from":           email_from,
-                "email_password":       email_password,
-                "email_to":             email_to,
-                "email_smtp":           "smtp.gmail.com",
-                "email_port":           587,
-                "schedule_time":        "10:00",
-            }
+            # Parse job titles — support comma-separated
+            job_titles = [t.strip() for t in job_title.split(",") if t.strip()]
+            primary_kws   = [k.strip() for k in primary_text.splitlines()   if k.strip()]
+            secondary_kws = [k.strip() for k in secondary_text.splitlines() if k.strip()]
+            preferred_kws = [k.strip() for k in preferred_text.splitlines() if k.strip()]
+            exclude_kws   = [k.strip() for k in exclude_text.splitlines()   if k.strip()]
+            target_cos    = [c.strip() for c in companies_text.splitlines() if c.strip()]
 
-            # Live log
+            all_jobs = []
+
             log_lines  = []
             log_holder = st.empty()
             def ui_log(msg):
                 log_lines.append(msg)
-                rendered = "\n".join(log_lines[-15:])
+                rendered = "\n".join(log_lines[-18:])
                 log_holder.markdown(f"<div class='log-box'>{rendered}</div>", unsafe_allow_html=True)
             lj.log = ui_log
 
             with st.status("Searching LinkedIn…", expanded=True) as status:
-                combo_count = len(locations) * len(work_modes) * len(exp_levels)
-                st.write(f"**{job_title}** · {', '.join(locations)} · {', '.join(work_modes)} · {combo_count} combination(s)")
-                prog = st.progress(0, text="Fetching listings…")
+                prog = st.progress(0, text="Starting…")
 
-                st.write("**Step 1/3** — Fetching from LinkedIn…")
-                jobs = lj.fetch_all_combinations(cfg)
-                prog.progress(35, text=f"{len(jobs)} listings found — enriching…")
+                for ti, jt in enumerate(job_titles):
+                    cfg = {
+                        "job_title":            jt,
+                        "location":             locations,
+                        "work_mode":            work_modes,
+                        "experience_level":     exp_levels,
+                        "job_type":             job_type,
+                        "posted_within_days":   posted_days,
+                        "min_years_experience": int(min_exp),
+                        "max_results":          max_results,
+                        "primary_must_have":    primary_kws,
+                        "secondary_must_have":  secondary_kws,
+                        "preferred_keywords":   preferred_kws,
+                        "exclude_keywords":     exclude_kws,
+                        "target_companies":     target_cos,
+                        "exclude_closed_jobs":  exclude_closed,
+                        "skills":               [],
+                        "output_folder":        ".",
+                        "output_filename":      "linkedin_jobs_web.xlsx",
+                        "email_from":           email_from if 'email_from' in dir() else "",
+                        "email_password":       email_password if 'email_password' in dir() else "",
+                        "email_to":             email_to if 'email_to' in dir() else "",
+                        "email_smtp":           "smtp.gmail.com",
+                        "email_port":           587,
+                        "schedule_time":        "10:00",
+                    }
 
-                if not jobs:
+                    st.write(f"**Title {ti+1}/{len(job_titles)}:** {jt} · {', '.join(locations)}")
+                    fetched = lj.fetch_all_combinations(cfg)
+                    prog.progress(int(30 + 20 * ti / len(job_titles)), text=f"{len(fetched)} found for '{jt}'…")
+
+                    st.write(f"  Enriching {len(fetched)} jobs…")
+                    enriched = lj.enrich_jobs(fetched, cfg)
+                    all_jobs.extend(enriched)
+                    prog.progress(int(60 + 30 * (ti+1) / len(job_titles)), text="Enriching…")
+
+                # Deduplicate across titles by URL
+                seen_urls = set()
+                deduped = []
+                for j in all_jobs:
+                    u = j.get("LinkedIn URL", "")
+                    if u not in seen_urls:
+                        seen_urls.add(u)
+                        deduped.append(j)
+                all_jobs = deduped
+
+                if not all_jobs:
                     status.update(label="No results found", state="error")
                     st.warning("No jobs found. Try broader filters — more locations, longer time window, or different experience levels.")
                     st.stop()
 
-                st.write(f"**Step 2/3** — Enriching {len(jobs)} jobs (Easy Apply · company info · closed check)…")
-                st.caption("This takes ~2 seconds per job.")
-                jobs = lj.enrich_jobs(jobs, cfg)
-                prog.progress(75, text="Saving to repository…")
-
-                st.write("**Step 3/3** — Deduplicating and saving to your repository…")
-                new_count, dup_count = append_new_jobs(jobs, user)
-                st.session_state.results   = jobs
+                prog.progress(90, text="Saving to repository…")
+                st.write("Deduplicating and saving to your repository…")
+                new_count, dup_count = append_new_jobs(all_jobs, user)
+                st.session_state.results   = all_jobs
                 st.session_state.new_count = new_count
                 st.session_state.dup_count = dup_count
 
@@ -519,25 +659,7 @@ def show_main_app():
 
             log_holder.empty()
 
-            # Email
-            if email_from and email_to and jobs:
-                try:
-                    buf = io.BytesIO()
-                    tmp_df = pd.DataFrame(jobs)
-                    for col in lj.COL_ORDER:
-                        if col not in tmp_df.columns: tmp_df[col] = ""
-                    with pd.ExcelWriter(buf, engine="openpyxl") as w:
-                        tmp_df[lj.COL_ORDER].to_excel(w, index=False, sheet_name="LinkedIn Jobs")
-                        lj.apply_styles_and_dropdown(w.sheets["LinkedIn Jobs"], len(tmp_df))
-                    buf.seek(0)
-                    tmp_path = f"/tmp/jobs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                    with open(tmp_path, "wb") as f: f.write(buf.read())
-                    lj.send_email(tmp_path, new_count, cfg)
-                    st.toast("📧 Results emailed successfully!")
-                except Exception as e:
-                    st.warning(f"Email could not be sent: {e}")
-
-        # Results panel
+        # ── Results panel ─────────────────────────────────────────
         if st.session_state.results:
             jobs = st.session_state.results
             df   = pd.DataFrame(jobs)
@@ -549,88 +671,78 @@ def show_main_app():
             dup_c = st.session_state.dup_count
 
             if dup_c and dup_c > 0:
-                st.info(f"**{new_c} new job(s)** added to your repository · **{dup_c} duplicate(s)** already existed from previous searches — skipped.")
+                st.info(f"**{new_c} new job(s)** added to your repository · **{dup_c} duplicate(s)** already existed — skipped.")
             elif new_c is not None:
                 st.success(f"**{new_c} new job(s)** added to your repository. No duplicates found.")
 
-            # Metrics
             m1, m2, m3, m4, m5, m6 = st.columns(6)
-            m1.metric("Total Found",  len(df))
-            m2.metric("New to Repo",  new_c or 0)
-            m3.metric("Duplicates",   dup_c or 0)
-            m4.metric("Strong Match", len(df[df["Match"] == "Strong"]))
-            m5.metric("Easy Apply",   len(df[df["Easy Apply"] == "Yes"]))
-            m6.metric("Still Open",   len(df[df["Still Accepting?"] == "Yes"]))
+            m1.metric("Total Found",    len(df))
+            m2.metric("New to Repo",    new_c or 0)
+            m3.metric("Duplicates",     dup_c or 0)
+            m4.metric("Score ≥ 80",     len(df[pd.to_numeric(df["Score"], errors="coerce") >= 80]))
+            m5.metric("Easy Apply",     len(df[df["Easy Apply"] == "Yes"]))
+            m6.metric("Still Open",     len(df[df["Still Accepting?"] == "Yes"]))
 
             st.markdown("---")
-
-            # Table filters
             f1, f2, f3, f4 = st.columns(4)
-            all_matches = sorted(df["Match"].dropna().unique().tolist())
             all_easy    = sorted(df["Easy Apply"].dropna().unique().tolist())
             all_open    = sorted(df["Still Accepting?"].dropna().unique().tolist())
             all_locs    = sorted(df["Location"].dropna().unique().tolist())
+            all_p_match = sorted(df["Primary Keywords Match"].dropna().unique().tolist())
 
-            sel_match = f1.multiselect("Match",           all_matches, default=all_matches, key="sr_m")
-            sel_easy  = f2.multiselect("Easy Apply",      all_easy,    default=all_easy,    key="sr_e")
-            sel_open  = f3.multiselect("Still Accepting", all_open,    default=all_open,    key="sr_o")
-            sel_loc   = f4.multiselect("Location",        all_locs,    default=all_locs,    key="sr_l")
+            sel_easy    = f1.multiselect("Easy Apply",         all_easy,    default=all_easy,    key="sr_e")
+            sel_open    = f2.multiselect("Still Accepting",    all_open,    default=all_open,    key="sr_o")
+            sel_loc     = f3.multiselect("Location",           all_locs,    default=all_locs,    key="sr_l")
+            sel_pmatch  = f4.multiselect("Primary KW Match",   all_p_match, default=all_p_match, key="sr_pm")
 
             mask = (
-                df["Match"].isin(sel_match) &
                 df["Easy Apply"].isin(sel_easy) &
                 df["Still Accepting?"].isin(sel_open) &
-                df["Location"].isin(sel_loc)
+                df["Location"].isin(sel_loc) &
+                df["Primary Keywords Match"].isin(sel_pmatch)
             )
             fdf = df[mask].copy()
-            st.caption(f"Showing **{len(fdf)}** of **{len(df)}** results  ·  Go to **My Job Repository** tab to update statuses")
+            st.caption(f"Showing **{len(fdf)}** of **{len(df)}** results")
 
             st.dataframe(
                 fdf, use_container_width=True, hide_index=True, height=460,
                 column_config={
-                    "Applied?":          st.column_config.SelectboxColumn("Applied?",
+                    "Applied?":                   st.column_config.SelectboxColumn("Applied?",
                         options=["", "Relevant", "Applied", "Irrelevant - Criteria mismatch"], width="medium"),
-                    "Job Title":         st.column_config.TextColumn("Job Title", width="large"),
-                    "Company":           st.column_config.TextColumn("Company",   width="medium"),
-                    "Company Size":      st.column_config.TextColumn("Co. Size",  width="small"),
-                    "Company Type":      st.column_config.TextColumn("Co. Type",  width="medium"),
-                    "Level":             st.column_config.TextColumn("Level",     width="small"),
-                    "Location":          st.column_config.TextColumn("Location",  width="small"),
-                    "Posted Date":       st.column_config.TextColumn("Posted",    width="small"),
-                    "Easy Apply":        st.column_config.TextColumn("Easy Apply",width="small"),
-                    "Recruiter Profile": st.column_config.LinkColumn("Recruiter", display_text="👤", width="small"),
-                    "Match":             st.column_config.TextColumn("Match",     width="small"),
-                    "Work Mode":         st.column_config.TextColumn("Mode",      width="small"),
-                    "Still Accepting?":  st.column_config.TextColumn("Open?",     width="small"),
-                    "Date Searched":     st.column_config.TextColumn("Searched",  width="small"),
-                    "Exp. Required":     st.column_config.TextColumn("Exp. Req.", width="small"),
-                    "LinkedIn URL":      st.column_config.LinkColumn("LinkedIn",  display_text="🔗 View", width="small"),
+                    "Job Title":                  st.column_config.TextColumn("Job Title",   width="large"),
+                    "Company":                    st.column_config.TextColumn("Company",     width="medium"),
+                    "Company Size":               st.column_config.TextColumn("Co. Size",    width="small"),
+                    "Company Type":               st.column_config.TextColumn("Co. Type",    width="medium"),
+                    "Level":                      st.column_config.TextColumn("Level",       width="small"),
+                    "Location":                   st.column_config.TextColumn("Location",    width="small"),
+                    "Posted Date":                st.column_config.TextColumn("Posted",      width="small"),
+                    "Easy Apply":                 st.column_config.TextColumn("Easy Apply",  width="small"),
+                    "Recruiter Profile":          st.column_config.LinkColumn("Recruiter",   display_text="👤", width="small"),
+                    "Score":                      st.column_config.NumberColumn("Score",     width="small", format="%d"),
+                    "Primary Keywords Match":     st.column_config.TextColumn("Primary KW",  width="small"),
+                    "Secondary Keywords Match":   st.column_config.TextColumn("Secondary KW",width="small"),
+                    "Work Mode":                  st.column_config.TextColumn("Mode",        width="small"),
+                    "Still Accepting?":           st.column_config.TextColumn("Open?",       width="small"),
+                    "Date Searched":              st.column_config.TextColumn("Searched",    width="small"),
+                    "Exp. Required":              st.column_config.TextColumn("Exp. Req.",   width="small"),
+                    "LinkedIn URL":               st.column_config.LinkColumn("LinkedIn",    display_text="🔗 View", width="small"),
                 },
             )
 
             st.markdown("---")
             dl1, dl2, _ = st.columns([1, 1, 2])
             ts = datetime.now().strftime("%Y%m%d_%H%M")
-
-            dl1.download_button(
-                "⬇️ Download CSV",
-                fdf.to_csv(index=False).encode("utf-8"),
-                f"jobs_{ts}.csv", "text/csv",
-                use_container_width=True,
-            )
+            dl1.download_button("⬇️ Download CSV", fdf.to_csv(index=False).encode("utf-8"),
+                f"jobs_{ts}.csv", "text/csv", use_container_width=True)
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine="openpyxl") as w:
                 fdf.to_excel(w, index=False, sheet_name="LinkedIn Jobs")
                 lj.apply_styles_and_dropdown(w.sheets["LinkedIn Jobs"], len(fdf))
             buf.seek(0)
-            dl2.download_button(
-                "⬇️ Download Excel",
-                buf,
-                f"jobs_{ts}.xlsx",
+            dl2.download_button("⬇️ Download Excel", buf, f"jobs_{ts}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-            st.caption("💡 Excel is colour-coded by match quality with Applied? dropdown — same as the original script output.")
+                use_container_width=True)
+            st.caption("💡 Excel is colour-coded: green = Score ≥ 80, blue = Score 50–79. Applied? dropdown included.")
 
         elif not run:
             st.markdown("""
@@ -640,8 +752,8 @@ def show_main_app():
                 Configure filters in the sidebar and click Search Jobs
               </div>
               <div style='font-size:0.9rem;'>
-                Results appear here. New jobs are saved to your repository automatically.<br>
-                Duplicates from previous searches are skipped.
+                Hover over the <b>ℹ</b> icon next to each filter for guidance.<br>
+                New jobs are saved to your repository automatically. Duplicates are skipped.
               </div>
             </div>
             """, unsafe_allow_html=True)
@@ -686,54 +798,66 @@ def show_main_app():
 
         st.markdown("---")
 
-        # Reset counter — incrementing this forces all multiselects to re-render fresh
+        # Reset-based filters
         if "repo_filter_gen" not in st.session_state:
             st.session_state.repo_filter_gen = 0
         gen = st.session_state.repo_filter_gen
 
-        all_statuses  = ["New", "Relevant", "Applied", "Irrelevant"]
-        all_r_matches = sorted(repo_df["match"].dropna().unique().tolist())
-        all_r_locs    = sorted(repo_df["location"].dropna().unique().tolist())
-        all_r_comps   = sorted(repo_df["company"].dropna().unique().tolist())
+        all_statuses = ["New", "Relevant", "Applied", "Irrelevant"]
+        all_r_locs   = sorted(repo_df["location"].dropna().unique().tolist())
+        all_r_comps  = sorted(repo_df["company"].dropna().unique().tolist())
+
+        # Score bucket filter
+        def score_bucket(v):
+            try:
+                s = int(float(str(v)))
+                if s >= 80: return "High (≥80)"
+                if s >= 50: return "Medium (50–79)"
+                return "Low (<50)"
+            except: return "NA"
+        if "score" in repo_df.columns:
+            repo_df["_score_bucket"] = repo_df["score"].apply(score_bucket)
+        else:
+            repo_df["_score_bucket"] = "NA"
+        all_buckets = sorted(repo_df["_score_bucket"].unique().tolist())
 
         filter_row, btn_col = st.columns([5, 1])
         with btn_col:
             st.markdown("<div style='margin-top:4px'></div>", unsafe_allow_html=True)
-            if st.button("🔄 Clear Filters", use_container_width=True, help="Reset all filters to show the full repository"):
+            if st.button("🔄 Clear Filters", use_container_width=True, help="Reset all filters to show full repository"):
                 st.session_state.repo_filter_gen += 1
                 st.rerun()
 
         with filter_row:
             rf1, rf2, rf3, rf4 = st.columns(4)
-            sel_st = rf1.multiselect("Status",   all_statuses,  default=all_statuses,  key=f"rp_st_{gen}")
-            sel_rm = rf2.multiselect("Match",    all_r_matches, default=all_r_matches, key=f"rp_m_{gen}")
-            sel_rl = rf3.multiselect("Location", all_r_locs,    default=all_r_locs,    key=f"rp_l_{gen}")
-            sel_rc = rf4.multiselect("Company",  all_r_comps,   default=all_r_comps,   key=f"rp_c_{gen}")
+            sel_st  = rf1.multiselect("Status",   all_statuses, default=all_statuses,  key=f"rp_st_{gen}")
+            sel_rl  = rf2.multiselect("Location", all_r_locs,   default=all_r_locs,    key=f"rp_l_{gen}")
+            sel_rc  = rf3.multiselect("Company",  all_r_comps,  default=all_r_comps,   key=f"rp_c_{gen}")
+            sel_sb  = rf4.multiselect("Score",    all_buckets,  default=all_buckets,   key=f"rp_sb_{gen}")
 
-        # If any filter is completely empty, treat it as "show all" for that dimension
         active_st = sel_st if sel_st else all_statuses
-        active_rm = sel_rm if sel_rm else all_r_matches
         active_rl = sel_rl if sel_rl else all_r_locs
         active_rc = sel_rc if sel_rc else all_r_comps
+        active_sb = sel_sb if sel_sb else all_buckets
 
         rmask = (
             repo_df["status"].isin(active_st) &
-            repo_df["match"].isin(active_rm) &
             repo_df["location"].isin(active_rl) &
-            repo_df["company"].isin(active_rc)
+            repo_df["company"].isin(active_rc) &
+            repo_df["_score_bucket"].isin(active_sb)
         )
         filtered_repo = repo_df[rmask].copy().reset_index(drop=True)
-
-        filter_active = (sel_st != all_statuses or sel_rm != all_r_matches
-                         or sel_rl != all_r_locs or sel_rc != all_r_comps)
+        filter_active = (sel_st != all_statuses or sel_rl != all_r_locs
+                         or sel_rc != all_r_comps or sel_sb != all_buckets)
         filter_note = " · 🔽 Filters active" if filter_active else ""
         st.caption(f"Showing **{len(filtered_repo)}** of **{len(repo_df)}** jobs  ·  Click any **Status ✏️** cell to update{filter_note}")
 
         DISPLAY_COLS = [
             "status", "job_title", "company", "company_size", "company_type",
-            "level", "location", "work_mode", "match", "easy_apply",
-            "still_accepting", "posted_date", "exp_required",
-            "recruiter_profile", "linkedin_url", "date_added",
+            "level", "location", "work_mode", "score",
+            "primary_keywords_match", "secondary_keywords_match",
+            "easy_apply", "still_accepting", "posted_date",
+            "exp_required", "recruiter_profile", "linkedin_url", "date_added",
         ]
         for col in DISPLAY_COLS:
             if col not in filtered_repo.columns: filtered_repo[col] = ""
@@ -743,27 +867,28 @@ def show_main_app():
             display_df,
             use_container_width=True,
             hide_index=True,
-            height=500,
+            height=520,
             key="repo_editor",
             column_config={
-                "status":            st.column_config.SelectboxColumn("Status ✏️",
-                    options=["New", "Relevant", "Applied", "Irrelevant"],
-                    width="medium", required=True),
-                "job_title":         st.column_config.TextColumn("Job Title",    width="large"),
-                "company":           st.column_config.TextColumn("Company",      width="medium"),
-                "company_size":      st.column_config.TextColumn("Co. Size",     width="small"),
-                "company_type":      st.column_config.TextColumn("Co. Type",     width="medium"),
-                "level":             st.column_config.TextColumn("Level",        width="small"),
-                "location":          st.column_config.TextColumn("Location",     width="small"),
-                "work_mode":         st.column_config.TextColumn("Mode",         width="small"),
-                "match":             st.column_config.TextColumn("Match",        width="small"),
-                "easy_apply":        st.column_config.TextColumn("Easy Apply",   width="small"),
-                "still_accepting":   st.column_config.TextColumn("Open?",        width="small"),
-                "posted_date":       st.column_config.TextColumn("Posted",       width="small"),
-                "exp_required":      st.column_config.TextColumn("Exp. Req.",    width="small"),
-                "recruiter_profile": st.column_config.LinkColumn("Recruiter",    display_text="👤",       width="small"),
-                "linkedin_url":      st.column_config.LinkColumn("LinkedIn",     display_text="🔗 View",  width="small"),
-                "date_added":        st.column_config.TextColumn("Added On",     width="medium"),
+                "status":                    st.column_config.SelectboxColumn("Status ✏️",
+                    options=["New", "Relevant", "Applied", "Irrelevant"], width="medium", required=True),
+                "job_title":                 st.column_config.TextColumn("Job Title",        width="large"),
+                "company":                   st.column_config.TextColumn("Company",          width="medium"),
+                "company_size":              st.column_config.TextColumn("Co. Size",         width="small"),
+                "company_type":              st.column_config.TextColumn("Co. Type",         width="medium"),
+                "level":                     st.column_config.TextColumn("Level",            width="small"),
+                "location":                  st.column_config.TextColumn("Location",         width="small"),
+                "work_mode":                 st.column_config.TextColumn("Mode",             width="small"),
+                "score":                     st.column_config.TextColumn("Score",            width="small"),
+                "primary_keywords_match":    st.column_config.TextColumn("Primary KW",       width="small"),
+                "secondary_keywords_match":  st.column_config.TextColumn("Secondary KW",     width="small"),
+                "easy_apply":                st.column_config.TextColumn("Easy Apply",       width="small"),
+                "still_accepting":           st.column_config.TextColumn("Open?",            width="small"),
+                "posted_date":               st.column_config.TextColumn("Posted",           width="small"),
+                "exp_required":              st.column_config.TextColumn("Exp. Req.",        width="small"),
+                "recruiter_profile":         st.column_config.LinkColumn("Recruiter",        display_text="👤", width="small"),
+                "linkedin_url":              st.column_config.LinkColumn("LinkedIn",         display_text="🔗 View", width="small"),
+                "date_added":                st.column_config.TextColumn("Added On",         width="medium"),
             },
             disabled=[c for c in DISPLAY_COLS if c != "status"],
         )
@@ -773,65 +898,61 @@ def show_main_app():
         edited_status = edited_df["status"].reset_index(drop=True)
         changed_mask  = orig_status != edited_status
         if changed_mask.any():
-            changed_idxs = changed_mask[changed_mask].index.tolist()
-            for idx in changed_idxs:
+            for idx in changed_mask[changed_mask].index.tolist():
                 update_job_status(filtered_repo.iloc[idx]["id"], edited_df.iloc[idx]["status"])
-            st.success(f"✅ {len(changed_idxs)} status update(s) saved.")
+            st.success(f"✅ {changed_mask.sum()} status update(s) saved.")
             st.rerun()
 
         st.markdown("---")
 
-        # Download
+        # Downloads
         dl1, dl2, _ = st.columns([1, 1, 2])
         ts = datetime.now().strftime("%Y%m%d_%H%M")
         RENAME = {
             "status": "Status", "job_title": "Job Title", "company": "Company",
             "company_size": "Company Size", "company_type": "Company Type",
             "level": "Level", "location": "Location", "work_mode": "Work Mode",
-            "match": "Match", "easy_apply": "Easy Apply",
-            "still_accepting": "Still Accepting?", "posted_date": "Posted Date",
-            "exp_required": "Exp. Required", "recruiter_profile": "Recruiter Profile",
-            "linkedin_url": "LinkedIn URL", "date_added": "Date Added",
+            "score": "Score", "primary_keywords_match": "Primary Keywords Match",
+            "secondary_keywords_match": "Secondary Keywords Match",
+            "easy_apply": "Easy Apply", "still_accepting": "Still Accepting?",
+            "posted_date": "Posted Date", "exp_required": "Exp. Required",
+            "recruiter_profile": "Recruiter Profile", "linkedin_url": "LinkedIn URL",
+            "date_added": "Date Added",
         }
         download_df = filtered_repo[DISPLAY_COLS].copy().rename(columns=RENAME)
 
-        dl1.download_button(
-            "⬇️ Download CSV",
+        dl1.download_button("⬇️ Download CSV",
             download_df.to_csv(index=False).encode("utf-8"),
-            f"repository_{ts}.csv", "text/csv",
-            use_container_width=True,
-        )
+            f"repository_{ts}.csv", "text/csv", use_container_width=True)
+
         buf2 = io.BytesIO()
         with pd.ExcelWriter(buf2, engine="openpyxl") as w:
             download_df.to_excel(w, index=False, sheet_name="Job Repository")
             ws = w.sheets["Job Repository"]
             from openpyxl.styles import Font, PatternFill, Alignment
             from openpyxl.worksheet.datavalidation import DataValidation
-            hdr_fill = PatternFill("solid", fgColor="1F3864")
+            hdr = PatternFill("solid", fgColor="1F3864")
             for cell in ws[1]:
                 cell.font      = Font(bold=True, color="FFFFFF", size=10)
-                cell.fill      = hdr_fill
+                cell.fill      = hdr
                 cell.alignment = Alignment(horizontal="center", vertical="center")
             ws.freeze_panes = "A2"
             for col_cells in ws.columns:
-                max_len = max((len(str(c.value or "")) for c in col_cells), default=10)
-                ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 45)
+                w_ = max((len(str(c.value or "")) for c in col_cells), default=10)
+                ws.column_dimensions[col_cells[0].column_letter].width = min(w_ + 4, 45)
             dv = DataValidation(type="list", formula1='"New,Relevant,Applied,Irrelevant"', allow_blank=True)
             ws.add_data_validation(dv)
             dv.sqref = f"A2:A{len(download_df) + 1}"
         buf2.seek(0)
-        dl2.download_button(
-            "⬇️ Download Excel",
-            buf2,
+        dl2.download_button("⬇️ Download Excel", buf2,
             f"repository_{ts}.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
-        st.caption("💡 Status column is editable in the table above — changes save instantly. Excel download includes full repository with Status dropdown.")
+            use_container_width=True)
+        st.caption("💡 Status column is editable directly in the table above — changes save instantly.")
 
 
 # ─────────────────────────────────────────────────────────────────
-# MAIN ROUTER
+# ROUTER
 # ─────────────────────────────────────────────────────────────────
 if st.session_state.user is None:
     show_auth_page()
