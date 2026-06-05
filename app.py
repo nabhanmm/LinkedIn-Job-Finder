@@ -373,6 +373,43 @@ def show_auth_page():
 # ─────────────────────────────────────────────────────────────────
 # MAIN APP
 # ─────────────────────────────────────────────────────────────────
+@st.dialog("⚠️ Search Too Wide")
+def show_too_wide_dialog(new_count, combo_count):
+    st.markdown(f"""
+    <div style="text-align:center; padding: 8px 0 12px;">
+        <div style="font-size:2.5rem; margin-bottom:8px;">🔍</div>
+        <div style="font-size:1.1rem; font-weight:600; color:#0f172a; margin-bottom:6px;">
+            Too many new results ({new_count} jobs)
+        </div>
+        <div style="font-size:0.88rem; color:#64748b; line-height:1.7;">
+            Your search returned <strong>{new_count} new jobs</strong> after removing duplicates
+            — the limit is <strong>100</strong>.<br>
+            No results have been saved to your repository.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.error(
+        f"**{new_count} new jobs found across {combo_count} search combination(s)** — "
+        "this exceeds the 100-job limit. Nothing has been saved."
+    )
+
+    st.markdown("**To fix this, make your search more specific:**")
+    st.markdown("""
+- 📍 **Reduce locations** — use 1–2 specific cities instead of a whole country
+- 🏷️ **Be more specific with the job title** — e.g. *Talent Acquisition Manager* instead of *Talent Acquisition*
+- 📅 **Shorten the date range** — try *Last 3 days* or *Last 7 days*
+- 🎯 **Add Primary Keywords** — force the job to mention specific terms like *SaaS* or *analytics*
+- 💼 **Reduce work modes** — e.g. select only *Remote* instead of Remote + Hybrid + Onsite
+    """)
+
+    st.info("Close this popup and adjust your filters, then search again. "
+            "These jobs will be fetched fresh on your next search.")
+
+    if st.button("✅ Got it — close and adjust filters", type="primary", use_container_width=True):
+        st.rerun()
+
+
 def show_main_app():
     user     = st.session_state.user
     username = (user.user_metadata or {}).get("username", user.email.split("@")[0])
@@ -453,22 +490,14 @@ def show_main_app():
             format_func=lambda x: f"Last {x} day{'s' if x > 1 else ''}",
         )
 
-        # ── Min Exp / Max Results ─────────────────────────────────
-        col_a, col_b = st.columns(2)
-        with col_a:
-            filter_label("👤", "Min Exp (yrs)",
-                "Jobs requiring fewer years than this will be filtered out. Set to 0 to see all.")
-            min_exp = st.number_input(
-                "min_exp_input", label_visibility="collapsed",
-                min_value=0, max_value=30, value=0, step=1,
-            )
-        with col_b:
-            filter_label("📦", "Max Results",
-                "Max job listings to fetch. More = longer load time (~2 sec each). Start with 25.")
-            max_results = st.selectbox(
-                "max_results_input", label_visibility="collapsed",
-                options=[10, 25, 50, 75, 100], index=2,
-            )
+        # ── Min Exp (full width, max_results removed from UI) ────
+        filter_label("👤", "Min Exp (yrs)",
+            "Jobs requiring fewer years than this will be filtered out. Set to 0 to see all.")
+        min_exp = st.number_input(
+            "min_exp_input", label_visibility="collapsed",
+            min_value=0, max_value=30, value=0, step=1,
+        )
+        max_results = 200  # Internal fetch cap — 100 new-job limit enforced after dedup
 
         st.markdown("---")
 
@@ -646,6 +675,18 @@ def show_main_app():
                     st.session_state.results   = []
                     st.session_state.new_count = 0
                     st.session_state.dup_count = already_seen
+                    st.stop()
+
+                # ── Cap check: >100 new jobs → show popup, abort ─────────
+                RESULT_CAP = 100
+                if len(new_only) > RESULT_CAP:
+                    status.update(label=f"⚠️ Search too wide — {len(new_only)} new jobs found (limit: {RESULT_CAP})", state="error")
+                    combo_count = len(locations) * len(work_modes) * len(exp_levels) * len(job_titles)
+                    # Clear any previous results so stale data is not shown
+                    st.session_state.results   = None
+                    st.session_state.new_count = 0
+                    st.session_state.dup_count = 0
+                    show_too_wide_dialog(len(new_only), combo_count)
                     st.stop()
 
                 # ── Step 3: Enrich only the new jobs ────────────────────
