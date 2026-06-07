@@ -206,21 +206,28 @@ supabase = get_supabase()
 # Company size → sortable prefix so column sorts correctly
 # ─────────────────────────────────────────────────────────────────
 def sortable_company_size(s):
-    """Return a prefix-letter version that sorts A→H correctly."""
+    """Return a prefix-letter version (A-H) that sorts correctly ascending/descending."""
     if not s:
         return ""
-    cleaned = re.sub(r"[^\d]", "", str(s).split("-")[0].split("+")[0])
-    if not cleaned:
-        return s
-    n = int(cleaned)
+    digits = ""
+    for ch in str(s):
+        if ch.isdigit():
+            digits += ch
+        elif ch == "," and digits:
+            continue          # skip commas inside numbers e.g. 10,001
+        elif digits:
+            break             # stop at first non-digit/non-comma after digits start
+    if not digits:
+        return str(s)
+    n = int(digits)
     if n >= 10001: return "H: 10,001+"
-    if n >= 5001:  return "G: 5,001–10,000"
-    if n >= 1001:  return "F: 1,001–5,000"
-    if n >= 501:   return "E: 501–1,000"
-    if n >= 201:   return "D: 201–500"
-    if n >= 51:    return "C: 51–200"
-    if n >= 11:    return "B: 11–50"
-    return          "A: 1–10"
+    if n >= 5001:  return "G: 5,001-10,000"
+    if n >= 1001:  return "F: 1,001-5,000"
+    if n >= 501:   return "E: 501-1,000"
+    if n >= 201:   return "D: 201-500"
+    if n >= 51:    return "C: 51-200"
+    if n >= 11:    return "B: 11-50"
+    return                "A: 1-10"
 
 
 # ─────────────────────────────────────────────────────────────────
