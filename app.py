@@ -203,6 +203,53 @@ supabase = get_supabase()
 
 
 # ─────────────────────────────────────────────────────────────────
+# Company size → sortable prefix so column sorts correctly
+# ─────────────────────────────────────────────────────────────────
+def sortable_company_size(s):
+    """Return a prefix-letter version that sorts A→H correctly."""
+    if not s:
+        return ""
+    cleaned = re.sub(r"[^\d]", "", str(s).split("-")[0].split("+")[0])
+    if not cleaned:
+        return s
+    n = int(cleaned)
+    if n >= 10001: return "H: 10,001+"
+    if n >= 5001:  return "G: 5,001–10,000"
+    if n >= 1001:  return "F: 1,001–5,000"
+    if n >= 501:   return "E: 501–1,000"
+    if n >= 201:   return "D: 201–500"
+    if n >= 51:    return "C: 51–200"
+    if n >= 11:    return "B: 11–50"
+    return          "A: 1–10"
+
+
+# ─────────────────────────────────────────────────────────────────
+# User preferences — save & load last-used filters
+# ─────────────────────────────────────────────────────────────────
+def load_user_prefs(user_id: str) -> dict:
+    try:
+        res = (supabase.table("user_preferences")
+               .select("preferences")
+               .eq("user_id", user_id)
+               .execute())
+        if res.data:
+            return res.data[0].get("preferences") or {}
+    except Exception:
+        pass
+    return {}
+
+def save_user_prefs(user_id: str, prefs: dict):
+    try:
+        supabase.table("user_preferences").upsert({
+            "user_id":      user_id,
+            "preferences":  prefs,
+            "updated_at":   datetime.now().isoformat(),
+        }).execute()
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────
 # Session state
 # ─────────────────────────────────────────────────────────────────
 DEFAULTS = {
@@ -215,8 +262,24 @@ for k, v in DEFAULTS.items():
 
 if st.session_state.access_token and st.session_state.user is None:
     try:
+        # Restore + silently refresh the token so the session extends
         res = supabase.auth.set_session(st.session_state.access_token, st.session_state.refresh_token)
-        st.session_state.user = res.user
+        try:
+            refreshed = supabase.auth.refresh_session()
+            st.session_state.access_token  = refreshed.session.access_token
+            st.session_state.refresh_token = refreshed.session.refresh_token
+            st.session_state.user          = refreshed.user
+        except Exception:
+            st.session_state.user = res.user
+
+        # Load saved filter preferences into session state (only for fresh sessions)
+        if not st.session_state.get("prefs_loaded") and st.session_state.user:
+            prefs = load_user_prefs(st.session_state.user.id)
+            for k, v in prefs.items():
+                if k not in st.session_state:
+                    st.session_state[k] = v
+            st.session_state.prefs_loaded = True
+
     except Exception:
         st.session_state.access_token = st.session_state.refresh_token = None
 
@@ -360,6 +423,12 @@ def show_auth_page():
                         st.session_state.user          = res.user
                         st.session_state.access_token  = res.session.access_token
                         st.session_state.refresh_token = res.session.refresh_token
+                        # Load saved filter preferences immediately after login
+                        prefs = load_user_prefs(res.user.id)
+                        for k, v in prefs.items():
+                            if k not in st.session_state:
+                                st.session_state[k] = v
+                        st.session_state.prefs_loaded = True
                         st.rerun()
 
         st.markdown("""
@@ -373,6 +442,30 @@ def show_auth_page():
 # ─────────────────────────────────────────────────────────────────
 # MAIN APP
 # ─────────────────────────────────────────────────────────────────
+@st.dialog("⚠️ Required Fields Missing")
+def show_missing_fields_dialog(missing_fields: list):
+    st.markdown("""
+    <div style='text-align:center; padding:8px 0 12px;'>
+        <div style='font-size:2.5rem; margin-bottom:8px;'>📝</div>
+        <div style='font-size:1.1rem; font-weight:600; color:#0f172a; margin-bottom:6px;'>
+            Please fill in the required fields
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    for field in missing_fields:
+        st.error(f"**{field}** is required before searching.")
+    st.markdown("""
+    <div style='font-size:0.85rem; color:#64748b; margin-top:10px; line-height:1.7;'>
+    These fields are mandatory to prevent overly broad searches that would return
+    too many irrelevant results.<br><br>
+    💡 <strong>Job Title</strong> — type the exact role you want, e.g. <em>Talent Acquisition Manager</em><br>
+    💡 <strong>Locations</strong> — type at least one city or country, e.g. <em>India, Dubai</em>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("✅ Got it — let me fill them in", type="primary", use_container_width=True):
+        st.rerun()
+
+
 @st.dialog("⚠️ Search Too Wide")
 def show_too_wide_dialog(new_count, combo_count):
     st.markdown(f"""
@@ -587,11 +680,17 @@ def show_main_app():
         """, unsafe_allow_html=True)
 
         if run:
+            missing = []
+            if not job_title.strip():
+                missing.append("Job Title")
+            if not locations:
+                missing.append("Locations")
+            if missing:
+                show_missing_fields_dialog(missing)
+                st.stop()
             errors = []
-            if not job_title.strip():  errors.append("Job Title cannot be empty.")
-            if not locations:          errors.append("Enter at least one Location.")
-            if not work_modes:         errors.append("Select at least one Work Mode.")
-            if not exp_levels:         errors.append("Select at least one Experience Level.")
+            if not work_modes: errors.append("Select at least one Work Mode.")
+            if not exp_levels: errors.append("Select at least one Experience Level.")
             for e in errors: st.error(e)
             if errors: st.stop()
 
@@ -703,8 +802,22 @@ def show_main_app():
 
                 st.write("Saving to your repository…")
                 new_count, dup_count = append_new_jobs(all_jobs, user)
-                # dup_count from append_new_jobs covers any last-mile dups
                 total_dup = already_seen + dup_count
+
+                # Persist the filters used in this search for next login
+                save_user_prefs(user.id, {
+                    "job_title_input":      job_title,
+                    "locations_input":      locations_raw,
+                    "work_mode_input":      work_modes,
+                    "exp_level_input":      exp_levels,
+                    "job_type_input":       job_type,
+                    "posted_days_input":    posted_days,
+                    "min_exp_input":        int(min_exp),
+                    "primary_kw_input":     primary_text,
+                    "secondary_kw_input":   secondary_text,
+                    "exclude_kw_input":     exclude_text,
+                    "companies_input":      companies_text,
+                })
                 st.session_state.results   = all_jobs
                 st.session_state.new_count = new_count
                 st.session_state.dup_count = total_dup
@@ -723,6 +836,9 @@ def show_main_app():
             for col in lj.COL_ORDER:
                 if col not in df.columns: df[col] = ""
             df = df[lj.COL_ORDER]
+            # Normalise Company Size so column sorts correctly (A→H buckets)
+            if "Company Size" in df.columns:
+                df["Company Size"] = df["Company Size"].apply(sortable_company_size)
 
             new_c = st.session_state.new_count
             dup_c = st.session_state.dup_count
@@ -872,6 +988,9 @@ def show_main_app():
             return
 
         repo_df = pd.DataFrame(repo_data)
+        # Normalise Company Size for correct sort order in repository table
+        if "company_size" in repo_df.columns:
+            repo_df["company_size"] = repo_df["company_size"].apply(sortable_company_size)
 
         # Metrics
         m1, m2, m3, m4, m5 = st.columns(5)
