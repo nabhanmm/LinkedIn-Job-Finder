@@ -283,8 +283,7 @@ if st.session_state.access_token and st.session_state.user is None:
         if not st.session_state.get("prefs_loaded") and st.session_state.user:
             prefs = load_user_prefs(st.session_state.user.id)
             for k, v in prefs.items():
-                if k not in st.session_state:
-                    st.session_state[k] = v
+                st.session_state[k] = v   # always overwrite — restores last-used filters
             st.session_state.prefs_loaded = True
 
     except Exception:
@@ -321,13 +320,21 @@ def do_signin(email, password):
             return None, "Please verify your email first — check your inbox."
         return None, err
 
+FILTER_WIDGET_KEYS = [
+    "job_title_input", "locations_input", "work_mode_input", "exp_level_input",
+    "job_type_input", "posted_days_input", "min_exp_input",
+    "primary_kw_input", "secondary_kw_input", "exclude_kw_input", "companies_input",
+]
+
 def do_signout():
     try:
         supabase.auth.sign_out()
     except Exception:
         pass
-    for k in ["user", "access_token", "refresh_token", "results"]:
-        st.session_state[k] = None
+    for k in ["user", "access_token", "refresh_token", "results",
+              "prefs_loaded", "new_count", "dup_count"] + FILTER_WIDGET_KEYS:
+        if k in st.session_state:
+            del st.session_state[k]
     st.rerun()
 
 
@@ -433,8 +440,7 @@ def show_auth_page():
                         # Load saved filter preferences immediately after login
                         prefs = load_user_prefs(res.user.id)
                         for k, v in prefs.items():
-                            if k not in st.session_state:
-                                st.session_state[k] = v
+                            st.session_state[k] = v   # always overwrite on login
                         st.session_state.prefs_loaded = True
                         st.rerun()
 
@@ -538,6 +544,7 @@ def show_main_app():
             "job_title_input", label_visibility="collapsed",
             value="Talent Acquisition Manager, Head of Recruiting",
             placeholder="e.g. Talent Acquisition Manager, TA Lead",
+            key="job_title_input",
         )
 
         # ── Locations ─────────────────────────────────────────────
@@ -548,6 +555,7 @@ def show_main_app():
             "locations_input", label_visibility="collapsed",
             value="India, Kochi",
             placeholder="e.g. India, Dubai, Singapore, Remote",
+            key="locations_input",
         )
         locations = [l.strip() for l in locations_raw.split(",") if l.strip()]
 
@@ -559,6 +567,7 @@ def show_main_app():
             "work_mode_input", label_visibility="collapsed",
             options=["remote", "hybrid", "onsite"],
             default=["remote", "hybrid"],
+            key="work_mode_input",
         )
 
         # ── Experience Level ──────────────────────────────────────
@@ -569,6 +578,7 @@ def show_main_app():
             "exp_level_input", label_visibility="collapsed",
             options=["internship", "entry", "associate", "mid-senior", "director", "executive", "any"],
             default=["mid-senior"],
+            key="exp_level_input",
         )
 
         # ── Job Type ──────────────────────────────────────────────
@@ -578,6 +588,7 @@ def show_main_app():
             "job_type_input", label_visibility="collapsed",
             options=["full-time", "contract", "part-time", "any"],
             index=0,
+            key="job_type_input",
         )
 
         # ── Posted Within ─────────────────────────────────────────
@@ -588,6 +599,7 @@ def show_main_app():
             "posted_days_input", label_visibility="collapsed",
             options=[1, 3, 7, 14, 30], value=7,
             format_func=lambda x: f"Last {x} day{'s' if x > 1 else ''}",
+            key="posted_days_input",
         )
 
         # ── Min Exp (full width, max_results removed from UI) ────
@@ -596,6 +608,7 @@ def show_main_app():
         min_exp = st.number_input(
             "min_exp_input", label_visibility="collapsed",
             min_value=0, max_value=30, value=0, step=1,
+            key="min_exp_input",
         )
         max_results = 200  # Internal fetch cap — 100 new-job limit enforced after dedup
 
@@ -612,6 +625,7 @@ def show_main_app():
                 value="recruitment\nhiring",
                 height=90,
                 placeholder="One keyword per line",
+                key="primary_kw_input",
             )
 
         # ── Secondary Must-have Keywords ──────────────────────────
@@ -625,6 +639,7 @@ def show_main_app():
                 value="analytics",
                 height=90,
                 placeholder="One keyword per line",
+                key="secondary_kw_input",
             )
 
         # ── Exclude Keywords ─────────────────────────────────────
@@ -637,6 +652,7 @@ def show_main_app():
                 value="BPO\nstaffing\nRPO\njunior\nassociate recruiter\nfresher\nentry level\nintern\nrelocation required",
                 height=110,
                 placeholder="One keyword per line",
+                key="exclude_kw_input",
             )
 
         # ── Company Filter ────────────────────────────────────────
@@ -649,6 +665,7 @@ def show_main_app():
                 "companies_input", label_visibility="collapsed",
                 value="", height=70,
                 placeholder="e.g.\nFractal\nInfosys\nTata",
+                key="companies_input",
             )
             filter_label("🔒", "Hide Closed Jobs",
                 "Toggle ON to exclude jobs that are no longer accepting applications.")
