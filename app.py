@@ -240,7 +240,13 @@ def load_user_prefs(user_id: str) -> dict:
                .eq("user_id", user_id)
                .execute())
         if res.data:
-            return res.data[0].get("preferences") or {}
+            prefs = res.data[0].get("preferences") or {}
+            # Backward-compat: work_mode_input used to be a list (multiselect).
+            # Selectbox now needs a single string — take the first value.
+            wm = prefs.get("work_mode_input")
+            if isinstance(wm, list):
+                prefs["work_mode_input"] = wm[0] if wm else "remote"
+            return prefs
     except Exception:
         pass
     return {}
@@ -562,13 +568,14 @@ def show_main_app():
         # ── Work Mode ─────────────────────────────────────────────
         filter_label("💼", "Work Mode",
             "Remote = fully from home · Hybrid = mix of office and home · Onsite = office only. "
-            "Select one or more.")
-        work_modes = st.multiselect(
+            "Select one.")
+        work_mode_single = st.selectbox(
             "work_mode_input", label_visibility="collapsed",
             options=["remote", "hybrid", "onsite"],
-            default=["remote", "hybrid"],
+            index=0,
             key="work_mode_input",
         )
+        work_modes = [work_mode_single]
 
         # ── Experience Level ──────────────────────────────────────
         filter_label("📊", "Experience Level",
@@ -832,7 +839,7 @@ def show_main_app():
                 save_user_prefs(user.id, {
                     "job_title_input":      job_title,
                     "locations_input":      locations_raw,
-                    "work_mode_input":      work_modes,
+                    "work_mode_input":      work_mode_single,
                     "exp_level_input":      exp_levels,
                     "job_type_input":       job_type,
                     "posted_days_input":    posted_days,
