@@ -567,11 +567,11 @@ def show_main_app():
 
         # ── Work Mode ─────────────────────────────────────────────
         filter_label("💼", "Work Mode",
-            "Remote = fully from home · Hybrid = mix of office and home · Onsite = office only. "
-            "Select one.")
+            "Remote = fully from home · Hybrid = mix of office and home · Onsite = office only · "
+            "Any = include all work modes. Select one.")
         work_mode_single = st.selectbox(
             "work_mode_input", label_visibility="collapsed",
-            options=["remote", "hybrid", "onsite"],
+            options=["remote", "hybrid", "onsite", "any"],
             index=0,
             key="work_mode_input",
         )
